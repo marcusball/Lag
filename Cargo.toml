@@ -2,3 +2,6 @@
 name = "lag"
 version = "0.1.0"
 authors = ["Marcus Ball <marcus.ball@live.com>"]
+
+[dependencies]
+mio = { git = "https://github.com/carllerche/mio" }
