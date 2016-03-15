@@ -73,6 +73,57 @@ impl AuthoritativeServer{
 
         return server;
     }
+
+    fn start_accept_loop(&mut self, event_loop: &mut EventLoop<AuthoritativeServer>){
+        println!("Beginning server accept loop");
+
+        loop{
+            let socket = match self.socket.accept(){
+                Ok(s) => {
+                    match s{
+                        Some((socket,_)) => socket,
+                        None => {
+                            println!("Accept loop encountered WouldBlock");
+                            return;
+                        }
+                    }
+                },
+                Err(e) => {
+                    println!("Failed to accept new socket. Error: {:?}", e);
+                    return;
+                }
+            };
+
+            if let Ok(ref mut clients) = self.state.clients.write(){
+                match &clients.insert_with(|token| {
+                    println!("Inserting new connection from {:?}", token);
+                    GameClient::new(socket, token)
+                }) {
+                    &Some(token) => {
+                        println!("Insertion successful!");
+                        let ref mut client: GameClient = clients[token];
+                        match client.register(event_loop){
+                            Ok(_) => { println!("Registration successful!"); },
+                            Err(e) => {
+                                println!("Failed to register connection {:?} with event loop, error: {:?}", token, e);
+                                //clients.remove(token);
+                            }
+                        }
+                    },
+                    &None => {
+                        println!("Failed to insert!");
+                    }
+                }
+            };
+        }
+    }
+
+    // fn get_client_by_token<'a>(&'a mut self, token: Token) -> Option<&'a mut GameClient>{
+    //     if let Ok(clients) = self.state.clients.read(){
+    //         return Some(mut clients[token]);
+    //     }
+    //     None
+    // }
 }
 
 impl Handler for AuthoritativeServer{
@@ -115,7 +166,7 @@ impl Handler for AuthoritativeServer{
             println!("GOT SHIT TO READ FROM MY BRAH {:?} HELLLL YEAH", token);
 
             if self.token == token{
-                //I should accept this event loop or something?
+                self.start_accept_loop(event_loop);
             }
             else{
                 //Read some shit
