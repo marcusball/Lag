@@ -31,4 +31,24 @@ impl GameClient{
             Err(e)
         })
     }
+
+    pub fn reregister(&mut self, event_loop: &mut EventLoop<AuthoritativeServer>) -> Result<()>{
+        println!("Reregistering token {:?}", self.token);
+
+        event_loop.reregister(
+            &self.socket,
+            self.token,
+            EventSet::readable(),
+            PollOpt::edge() | PollOpt::oneshot()
+        ).and_then(|(),|{
+            Ok(())
+        }).or_else(|e|{
+            println!("Failed to reregister {:?}, {:?}", self.token, e);
+            Err(e)
+        })
+    }
+
+    pub fn read(&self){
+        println!("Fuck yeah!");
+    }
 }

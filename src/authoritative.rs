@@ -118,12 +118,44 @@ impl AuthoritativeServer{
         }
     }
 
-    // fn get_client_by_token<'a>(&'a mut self, token: Token) -> Option<&'a mut GameClient>{
-    //     if let Ok(clients) = self.state.clients.read(){
-    //         return Some(mut clients[token]);
+    // fn get_client_by_token<'a>(&'a mut self, token: Token) -> Option<&'a GameClient>{
+    //     let ref clients_ref : &'a Arc<RwLock<Slab<GameClient>>> = &self.state.clients;
+    //     if let Ok(clients) = clients_ref.read(){
+    //         let ref client : &'a GameClient = &clients[token];
+    //         return Some(client);
     //     }
     //     None
     // }
+
+    fn read_client(&mut self, event_loop: &mut EventLoop<AuthoritativeServer>, token: Token) -> Result<(),()>{
+        if let Ok(clients) = self.state.clients.read(){
+            if clients.contains(token){
+                println!("Let's read motherfucking {:?}'s dank message!", token);
+
+                let ref mut client = &clients[token];
+                client.read();
+
+                return Ok(());
+            }
+        }
+        println!("The fuck? We have no information about this {:?} guy", token);
+        Err(())
+    }
+
+    fn reregister_client(&mut self, event_loop: &mut EventLoop<AuthoritativeServer>, token: Token) -> Result<(),()>{
+        if let Ok(mut clients) = self.state.clients.write(){
+            if clients.contains(token){
+                println!("Let's reregister that fucking {:?}!", token);
+
+                let ref mut client = clients.get_mut(token).unwrap();
+                client.reregister(event_loop);
+
+                return Ok(());
+            }
+        }
+        println!("The fuck? We have no information about this {:?} guy", token);
+        Err(())
+    }
 }
 
 impl Handler for AuthoritativeServer{
@@ -169,7 +201,9 @@ impl Handler for AuthoritativeServer{
                 self.start_accept_loop(event_loop);
             }
             else{
-                //Read some shit
+                if self.read_client(event_loop,token).is_ok(){
+                    self.reregister_client(event_loop, token).ok();
+                }
             }
         }
     }
