@@ -14,7 +14,7 @@ fn main(){
     let address: SocketAddr = address_str.parse::<SocketAddr>().expect("Failed to parse address!");
 
     println!("Starting server on address {}", address_str);
-    let test = AuthoritativeServer::new(address);
+    let _ = AuthoritativeServer::new(address);
 
     println!("Done!");
 }

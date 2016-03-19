@@ -1,10 +1,10 @@
 use authoritative::AuthoritativeServer;
 use std::io::Result;
-use std::io;
+//use std::io;
 use std::io::prelude::*;
 use mio::{Token, EventLoop, EventSet, PollOpt, TryRead};
 use mio::tcp::{TcpStream};
-use byteorder::{ByteOrder, BigEndian, LittleEndian};
+//use byteorder::{ByteOrder, BigEndian, LittleEndian};
 
 pub struct GameClient{
     socket: TcpStream,

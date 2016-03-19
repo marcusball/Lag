@@ -2,20 +2,21 @@ extern crate mio;
 
 use client::GameClient;
 
-use mio::{TryRead, TryWrite};
+//use mio::{TryRead, TryWrite};
 use mio::tcp::*;
 use mio::util::Slab;
 use mio::Token;
 use mio::{EventLoop, EventSet, PollOpt, Handler};
-use bytes::{Buf, Take};
-use std::mem;
+//use bytes::{Buf, Take};
+//use std::mem;
 use std::net::SocketAddr;
-use std::io::Cursor;
-use std::thread;
-use std::sync::mpsc;
+//use std::io::Cursor;
+//use std::thread;
+//use std::sync::mpsc;
 use std::sync::{Arc, RwLock};
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::collections::HashMap;
+//use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::AtomicUsize;
+//use std::collections::HashMap;
 
 
 const SERVER_TOKEN: mio::Token = mio::Token(1);
@@ -118,43 +119,18 @@ impl AuthoritativeServer{
         }
     }
 
-    // fn get_client_by_token<'a>(&'a mut self, token: Token) -> Option<&'a GameClient>{
-    //     let ref clients_ref : &'a Arc<RwLock<Slab<GameClient>>> = &self.state.clients;
-    //     if let Ok(clients) = clients_ref.read(){
-    //         let ref client : &'a GameClient = &clients[token];
-    //         return Some(client);
-    //     }
-    //     None
-    // }
-
-    fn read_client(&mut self, event_loop: &mut EventLoop<AuthoritativeServer>, token: Token) -> Result<(),()>{
+    fn get_client_mut<'a, F>(&'a mut self, token: Token, mut action: F) -> Result<(), String>
+        where F: FnMut(&mut GameClient) {
         if let Ok(mut clients) = self.state.clients.write(){
             if clients.contains(token){
-                println!("Let's read motherfucking {:?}'s dank message!", token);
-
                 let ref mut client = clients.get_mut(token).unwrap();
-                client.read();
+
+                action(client);
 
                 return Ok(());
             }
         }
-        println!("The fuck? We have no information about this {:?} guy", token);
-        Err(())
-    }
-
-    fn reregister_client(&mut self, event_loop: &mut EventLoop<AuthoritativeServer>, token: Token) -> Result<(),()>{
-        if let Ok(mut clients) = self.state.clients.write(){
-            if clients.contains(token){
-                println!("Let's reregister that fucking {:?}!", token);
-
-                let ref mut client = clients.get_mut(token).unwrap();
-                client.reregister(event_loop);
-
-                return Ok(());
-            }
-        }
-        println!("The fuck? We have no information about this {:?} guy", token);
-        Err(())
+        Err(String::from(format!("No client exists with token {:?}", token)))
     }
 }
 
@@ -206,11 +182,12 @@ impl Handler for AuthoritativeServer{
                 self.start_accept_loop(event_loop);
             }
             else{
-                if self.read_client(event_loop,token).is_ok(){
-                    self.reregister_client(event_loop, token).ok();
-                }
+                self.get_client_mut(token, |client|{
+                    if client.read().is_ok(){
+                        client.reregister(event_loop).expect("Failed to reregister!");
+                    }
+                }).ok();
             }
         }
     }
-
 }
