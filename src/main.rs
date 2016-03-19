@@ -1,5 +1,6 @@
 extern crate mio;
 extern crate bytes;
+extern crate byteorder;
 
 mod authoritative;
 mod client;

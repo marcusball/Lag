@@ -1,7 +1,10 @@
 use authoritative::AuthoritativeServer;
 use std::io::Result;
-use mio::{Token, EventLoop, EventSet, PollOpt};
-use mio::tcp::TcpStream;
+use std::io;
+use std::io::prelude::*;
+use mio::{Token, EventLoop, EventSet, PollOpt, TryRead};
+use mio::tcp::{TcpStream};
+use byteorder::{ByteOrder, BigEndian, LittleEndian};
 
 pub struct GameClient{
     socket: TcpStream,
@@ -48,7 +51,40 @@ impl GameClient{
         })
     }
 
-    pub fn read(&self){
+    pub fn read(&mut self) -> Result<Option<u64>>{
         println!("Fuck yeah!");
+
+        let mut buf = [0u8; 12];
+
+        let bytes_read = match self.socket.try_read(&mut buf){
+            Ok(None) => { return Ok(None); },
+            Ok(Some(n)) => n,
+            Err(e) => { return Err(e); }
+        };
+
+        println!("Received: {:?}, {} bytes", buf, bytes_read);
+
+        let some_fucking_value = BigEndian::read_u16(buf[0..2].as_ref());
+
+        println!("Read {}", some_fucking_value);
+
+        let mut recv_buf : Vec<u8> = Vec::with_capacity(8);
+
+        let read_socket = <TcpStream as Read>::by_ref(&mut self.socket);
+
+        match read_socket.take(8).try_read_buf(&mut recv_buf){
+            Ok(None) => {},
+            Ok(Some(n)) => {},
+            Err(e) => {}
+        };
+
+        while let Some(b) = read_socket.take(1).try_read_buf(&mut recv_buf).ok(){
+            match b{
+                None => { break; },
+                Some(bytes) => { println!("Read {:?} bytes", bytes); },
+            };
+        }
+
+        Ok(None)
     }
 }

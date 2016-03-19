@@ -128,11 +128,11 @@ impl AuthoritativeServer{
     // }
 
     fn read_client(&mut self, event_loop: &mut EventLoop<AuthoritativeServer>, token: Token) -> Result<(),()>{
-        if let Ok(clients) = self.state.clients.read(){
+        if let Ok(mut clients) = self.state.clients.write(){
             if clients.contains(token){
                 println!("Let's read motherfucking {:?}'s dank message!", token);
 
-                let ref mut client = &clients[token];
+                let ref mut client = clients.get_mut(token).unwrap();
                 client.read();
 
                 return Ok(());
@@ -165,6 +165,11 @@ impl Handler for AuthoritativeServer{
     fn tick(&mut self, event_loop: &mut EventLoop<AuthoritativeServer>) {
         println!("Begin server tick!");
 
+        if let Ok(mut clients) = self.state.clients.write(){
+            for client in clients.iter_mut(){
+                client.reregister(event_loop).ok();
+            }
+        }
 
         println!("End server tick!");
     }
