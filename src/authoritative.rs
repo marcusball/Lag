@@ -132,6 +132,20 @@ impl AuthoritativeServer{
         }
         Err(String::from(format!("No client exists with token {:?}", token)))
     }
+
+    fn get_client<'a, F>(&'a mut self, token: Token, action: F) -> Result<(), String>
+        where F: Fn(&GameClient) {
+        if let Ok(mut clients) = self.state.clients.read(){
+            if clients.contains(token){
+                let ref mut client = clients.get(token).expect("Clients contains token, but was unable to access client!");
+
+                action(client);
+
+                return Ok(());
+            }
+        }
+        Err(String::from(format!("No client exists with token {:?}", token)))
+    }
 }
 
 impl Handler for AuthoritativeServer{
