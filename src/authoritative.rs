@@ -176,6 +176,10 @@ impl Handler for AuthoritativeServer{
         if events.is_hup(){
             println!("OH FUCK NO, {:?} DID NOT JUST FUCKING HANG UP ON ME!", token);
             println!("I'M GOING TO FUCKING MURDER YOU FUCKER");
+
+            if let Ok(mut clients) = self.state.clients.write(){
+                &clients.remove(token);
+            }
             //Reset?
             return;
         }
