@@ -7,3 +7,11 @@ authors = ["Marcus Ball <marcus.ball@live.com>"]
 mio = "0.5.0"
 bytes = "0.3.0"
 byteorder = "0.3"
+
+[[bin]]
+name = "lag-server"
+path = "src/main.rs"
+
+[lib]
+name = "lag_client"
+path = "src/lib.rs"
