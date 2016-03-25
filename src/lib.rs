@@ -1,47 +1,61 @@
 extern crate mio;
+extern crate crossbeam;
 
 use mio::tcp::*;
 use mio::TryWrite;
+use mio::util::Slab;
 use std::net::SocketAddr;
 use std::io::Result;
 use mio::{EventSet, EventLoop, Token, Handler, PollOpt};
 use std::thread;
-use std::thread::JoinHandle;
+//use std::thread::{JoinHandle, JoinInner};
 use std::sync::{Arc, RwLock, Condvar};
 //use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::collections::VecDeque;
+use crossbeam::Scope;
 
 const CLIENT_TOKEN: mio::Token = mio::Token(1);
 
 pub struct ClientNetworkInterface{
     socket: TcpStream,
 
-    thread_handle: Option<JoinHandle<()>>
+    //thread_handle: Arc<Option<JoinHandle<()>>>,
+
+    client: Arc<RwLock<Client>>
 }
 
 impl ClientNetworkInterface{
-    pub fn new(event_loop_ref: &mut Arc<RwLock<EventLoop<ClientNetworkInterface>>>, socket: TcpStream) -> ClientNetworkInterface{
-        let interface = ClientNetworkInterface{
+    pub fn new(event_loop: &mut EventLoop<ClientNetworkInterface>, socket: TcpStream, client: Arc<RwLock<Client>>) -> Arc<RwLock<ClientNetworkInterface>>{
+        let interface = Arc::new(RwLock::new(ClientNetworkInterface{
             socket: socket,
-            thread_handle: None
-        };
+            //thread_handle: Arc::new(None),
+            client: client
+        }));
 
-        let thread_event_loop_ref = event_loop_ref.clone();
-        let handle = thread::spawn(move||{
-
-            if let Ok(event_loop) = thread_event_loop_ref.write(){
-                event_loop.run(&mut interface).ok();
-            }
+        let thread_interface = interface.clone();
+        println!("Before");
+        crossbeam::scope(|scope|{
+            scope.spawn(||{
+                println!("thread start");
+                loop{
+                    if let Ok(mut client_interface) = thread_interface.write(){
+                        event_loop.run_once(&mut client_interface, None);
+                    }
+                }
+            });
         });
+        println!("after");
 
-        interface.thread_handle = Some(handle);
+        // if let Ok(interface_mut) = interface.write(){
+        //     interface_mut.thread_handle = handle;
+        // }
 
         return interface;
     }
 
-    fn register(&mut self, event_loop_ref: &mut Arc<RwLock<EventLoop<ClientNetworkInterface>>>, client: Client){
-        if let Ok(event_loop) = event_loop_ref.write(){
+    fn register(&mut self, event_loop: &mut EventLoop<ClientNetworkInterface>, client_ref: Arc<RwLock<Client>>){
+        if let Ok(client) = client_ref.read(){
             event_loop.register(
                 &self.socket,
                 client.token,
@@ -54,8 +68,8 @@ impl ClientNetworkInterface{
         }
     }
 
-    fn reregister(&mut self, event_loop_ref: &mut Arc<RwLock<EventLoop<ClientNetworkInterface>>>, client: Client){
-        if let Ok(event_loop) = event_loop_ref.write(){
+    fn reregister(&mut self, event_loop: &mut EventLoop<ClientNetworkInterface>, client_ref: Arc<RwLock<Client>>){
+        if let Ok(client) = client_ref.read(){
             event_loop.reregister(&self.socket, client.token, client.interest, PollOpt::edge())
                 .or_else(|e|{
                     println!("I am a sad panda, {:?}", e);
@@ -73,9 +87,6 @@ pub struct Client{
     interest: EventSet,
 
     send_queue: VecDeque<String>,
-
-
-    debug: AtomicUsize
 }
 
 impl Client{
@@ -83,8 +94,7 @@ impl Client{
         Client {
             send_queue: VecDeque::new(),
             token: CLIENT_TOKEN,
-            interest: EventSet::readable() | EventSet::writable(),
-            debug: AtomicUsize::new(0)
+            interest: EventSet::readable() | EventSet::writable()
         }
         // client.register(event_loop).ok();
         //
@@ -102,6 +112,8 @@ impl Client{
         // });
     }
 }
+
+type RwArcClientInterface = Arc<RwLock<ClientNetworkInterface>>;
 
 impl Handler for ClientNetworkInterface{
     type Timeout = ();
@@ -129,29 +141,30 @@ impl Handler for ClientNetworkInterface{
         if events.is_writable(){
             println!("TIME TO TALK MOTHERFUCKER");
 
-            if !self.send_queue.is_empty(){
-                if let Some(message) = self.send_queue.pop_front(){
-                    match self.socket.try_write(message.as_bytes()){
-                        Ok(Some(n)) => {
-                            println!("Wrote {} bytes", n);
-                        },
-                        Ok(None) => {
-                            println!("Nothing happened but it's okay I guess?");
-                            self.send_queue.push_back(message);
-                        },
-                        Err(e) => {
-                            println!("Oh fuck me god fucking damn it fucking shit fuck: {:?}", e);
-                            self.send_queue.push_back(message);
-                        }
-                    };
+            if let Ok(mut client) = self.client.write(){
+                if !client.send_queue.is_empty(){
+                    if let Some(message) = client.send_queue.pop_front(){
+                        match self.socket.try_write(message.as_bytes()){
+                            Ok(Some(n)) => {
+                                println!("Wrote {} bytes", n);
+                            },
+                            Ok(None) => {
+                                println!("Nothing happened but it's okay I guess?");
+                                client.send_queue.push_back(message);
+                            },
+                            Err(e) => {
+                                println!("Oh fuck me god fucking damn it fucking shit fuck: {:?}", e);
+                                client.send_queue.push_back(message);
+                            }
+                        };
+                    }
+                    else{
+                        println!("Failed to pop message from queue!");
+                    }
                 }
                 else{
-                    println!("Failed to pop message from queue!");
+                    println!("WTF do you mean there's no messages for me?");
                 }
-                self.reregister(event_loop);
-            }
-            else{
-                println!("WTF do you mean there's no messages for me?");
             }
         }
 
@@ -159,7 +172,9 @@ impl Handler for ClientNetworkInterface{
             println!("OH shit, what've you got to say?");
         }
 
-        self.debug.fetch_add(1, Ordering::SeqCst);
+        let mut client_rereg = self.client.clone();
+        self.reregister(event_loop, client_rereg);
+        //self.debug.fetch_add(1, Ordering::SeqCst);
     }
 
     fn notify(&mut self, _: &mut EventLoop<Self>, _: Self::Message) {
@@ -178,20 +193,30 @@ impl Handler for ClientNetworkInterface{
 fn connect(){
     let addr = "127.0.0.1:6969".parse().unwrap();
 
-    let mut event_loop = EventLoop::new().ok().expect("Failed to create event loop!");
-    if let Ok(mut client) = Client::new(&mut event_loop, &addr){
+    let mut socket = TcpStream::connect(&addr);
+    if socket.is_ok(){
+
+        println!("Starting thing");
+        let mut event_loop = EventLoop::new().ok().expect("Failed to create event loop!");
+        let mut client = Arc::new(RwLock::new(Client::new()));
+        let mut client_interface = ClientNetworkInterface::new(&mut event_loop, socket.unwrap(), client.clone());
         println!("Starting debug loop");
 
+        if let Ok(mut interface) = client_interface.write(){
+            interface.register(&mut event_loop, client);
+        }
+
+
         loop{
-            if client.debug.load(Ordering::Relaxed) > 0{
-                break;
-            }
+            // if client.debug.load(Ordering::Relaxed) > 0{
+            //     break;
+            // }
         }
 
         println!("Done with this shit");
     }
     else{
-        println!("Y u no client??");
+        println!("Failed to open socket! {:?}", socket.unwrap_err());
     }
 }
 
