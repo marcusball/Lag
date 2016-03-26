@@ -15,4 +15,4 @@ path = "src/main.rs"
 
 [lib]
 name = "lag_client"
-path = "src/lib.rs"
+path = "src/client/lib.rs"
