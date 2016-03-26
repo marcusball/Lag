@@ -15,6 +15,28 @@ use std::collections::VecDeque;
 
 const CLIENT_TOKEN: mio::Token = mio::Token(1);
 
+
+/// Contains data related to the client
+pub struct ClientData{
+    pub token: Token,
+
+    interest: EventSet,
+
+    send_queue: VecDeque<String>,
+}
+
+impl ClientData{
+    fn new() -> ClientData{
+        ClientData {
+            send_queue: VecDeque::new(),
+            token: CLIENT_TOKEN,
+            interest: EventSet::readable() | EventSet::writable()
+        }
+    }
+}
+
+
+/// Maintains a reference to the client, the socket, and the thread join handle
 struct ClientInterface{
     socket: TcpStream,
 
@@ -78,28 +100,6 @@ impl ClientInterface{
         }
     }
 }
-
-
-
-pub struct ClientData{
-    pub token: Token,
-
-    interest: EventSet,
-
-    send_queue: VecDeque<String>,
-}
-
-impl ClientData{
-    fn new() -> ClientData{
-        ClientData {
-            send_queue: VecDeque::new(),
-            token: CLIENT_TOKEN,
-            interest: EventSet::readable() | EventSet::writable()
-        }
-    }
-}
-
-type RwArcClientInterface = Arc<RwLock<ClientInterface>>;
 
 impl Handler for ClientInterface{
     type Timeout = ();
@@ -175,39 +175,64 @@ impl Handler for ClientInterface{
     }
 }
 
+
+pub struct Client{
+    data: Arc<RwLock<ClientData>>,
+    interface: Arc<RwLock<ClientInterface>>,
+    event_loop: Arc<RwLock<EventLoop<ClientInterface>>>
+}
+
+impl Client{
+    /// Connect to the given socket and register with a threaded event loop
+    pub fn connect(socket: TcpStream) -> Client{
+        let event_loop = Arc::new(RwLock::new(EventLoop::new().ok().expect("Failed to create event loop!")));
+        let client_data = Arc::new(RwLock::new(ClientData::new()));
+
+        let interface_event_loop = event_loop.clone();
+        let client_interface = ClientInterface::new(interface_event_loop, socket, client_data.clone());
+
+        let mut client = Client{
+            data: client_data,
+            interface: client_interface,
+            event_loop: event_loop
+        };
+
+        client.register();
+
+        return client;
+    }
+
+    /// Register with the event loop
+    fn register(&mut self){
+        if let Ok(mut event_loop) = self.event_loop.write(){
+            if let Ok(mut interface) = self.interface.write(){
+                interface.register(&mut event_loop, &self.data);
+            }
+        }
+    }
+}
+
 #[test]
 fn connect(){
     let addr = "127.0.0.1:6969".parse().unwrap();
 
     let mut socket = TcpStream::connect(&addr);
     if socket.is_ok(){
-
         println!("Starting thing");
-        let mut event_loop = Arc::new(RwLock::new(EventLoop::new().ok().expect("Failed to create event loop!")));
-        let mut client = Arc::new(RwLock::new(ClientData::new()));
 
-        let interface_event_loop = event_loop.clone();
-        let mut client_interface = ClientInterface::new(interface_event_loop, socket.unwrap(), client.clone());
-        println!("Starting debug loop");
+        let mut client = Client::connect(socket.unwrap());
 
-        if let Ok(mut event_loop_ref) = event_loop.write(){
-            if let Ok(mut interface) = client_interface.write(){
-                interface.register(&mut event_loop_ref, &client);
-            }
-        }
+        // if let Ok(mut client_ref) = client.write(){
+        //     client_ref.send_queue.push_front(String::from("Hello, world!"));
+        // }
 
-        if let Ok(mut client_ref) = client.write(){
-            client_ref.send_queue.push_front(String::from("Hello, world!"));
-        }
-
-
-        loop{
+        //loop{
             // if client.debug.load(Ordering::Relaxed) > 0{
             //     break;
             // }
-        }
+        //}
 
-        println!("Done with this shit");
+        //println!("Done with this shit");
     }
     else{
         println!("Failed to open socket! {:?}", socket.unwrap_err());
