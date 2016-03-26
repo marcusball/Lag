@@ -1,5 +1,4 @@
 extern crate mio;
-extern crate crossbeam;
 
 use mio::tcp::*;
 use mio::TryWrite;
@@ -8,34 +7,33 @@ use std::net::SocketAddr;
 use std::io::Result;
 use mio::{EventSet, EventLoop, Token, Handler, PollOpt};
 use std::thread;
-//use std::thread::{JoinHandle, JoinInner};
-use std::sync::{Arc, RwLock, Condvar};
+use std::thread::JoinHandle;
+use std::sync::{Arc, RwLock};
 //use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::collections::VecDeque;
-//use crossbeam::Scope;
 
 const CLIENT_TOKEN: mio::Token = mio::Token(1);
 
-pub struct ClientNetworkInterface{
+struct ClientInterface{
     socket: TcpStream,
 
-    //thread_handle: Arc<Option<JoinHandle<()>>>,
+    thread_handle: Option<JoinHandle<()>>,
 
-    client: Arc<RwLock<Client>>
+    client: Arc<RwLock<ClientData>>
 }
 
-impl ClientNetworkInterface{
-    pub fn new(event_loop: Arc<RwLock<EventLoop<ClientNetworkInterface>>>, socket: TcpStream, client: Arc<RwLock<Client>>) -> Arc<RwLock<ClientNetworkInterface>>{
-        let interface = Arc::new(RwLock::new(ClientNetworkInterface{
+impl ClientInterface{
+    fn new(event_loop: Arc<RwLock<EventLoop<ClientInterface>>>, socket: TcpStream, client: Arc<RwLock<ClientData>>) -> Arc<RwLock<ClientInterface>>{
+        let interface = Arc::new(RwLock::new(ClientInterface{
             socket: socket,
-            //thread_handle: Arc::new(None),
+            thread_handle: None,
             client: client
         }));
 
         let thread_interface = interface.clone();
         println!("Before");
-        thread::spawn(move||{
+        let handle = thread::spawn(move||{
             println!("Hello from thread!");
 
             loop{
@@ -46,26 +44,17 @@ impl ClientNetworkInterface{
                 }
             }
         });
-        // crossbeam::scope(|scope|{
-        //     scope.spawn(||{
-        //         println!("thread start");
-        //         loop{
-        //             if let Ok(mut client_interface) = thread_interface.write(){
-        //                 event_loop.run_once(&mut client_interface, None);
-        //             }
-        //         }
-        //     });
-        // });
+
         println!("after");
 
-        // if let Ok(interface_mut) = interface.write(){
-        //     interface_mut.thread_handle = handle;
-        // }
+        if let Ok(mut interface_mut) = interface.write(){
+            interface_mut.thread_handle = Some(handle);
+        }
 
         return interface;
     }
 
-    fn register(&mut self, event_loop: &mut EventLoop<ClientNetworkInterface>, client_ref: &Arc<RwLock<Client>>){
+    fn register(&mut self, event_loop: &mut EventLoop<ClientInterface>, client_ref: &Arc<RwLock<ClientData>>){
         if let Ok(client) = client_ref.read(){
             event_loop.register(
                 &self.socket,
@@ -79,7 +68,7 @@ impl ClientNetworkInterface{
         }
     }
 
-    fn reregister(&mut self, event_loop: &mut EventLoop<ClientNetworkInterface>, client_ref: Arc<RwLock<Client>>){
+    fn reregister(&mut self, event_loop: &mut EventLoop<ClientInterface>, client_ref: Arc<RwLock<ClientData>>){
         if let Ok(client) = client_ref.read(){
             event_loop.reregister(&self.socket, client.token, client.interest, PollOpt::edge())
                 .or_else(|e|{
@@ -92,7 +81,7 @@ impl ClientNetworkInterface{
 
 
 
-pub struct Client{
+pub struct ClientData{
     pub token: Token,
 
     interest: EventSet,
@@ -100,43 +89,29 @@ pub struct Client{
     send_queue: VecDeque<String>,
 }
 
-impl Client{
-    pub fn new() -> Client{
-        Client {
+impl ClientData{
+    fn new() -> ClientData{
+        ClientData {
             send_queue: VecDeque::new(),
             token: CLIENT_TOKEN,
             interest: EventSet::readable() | EventSet::writable()
         }
-        // client.register(event_loop).ok();
-        //
-        // client.send_queue.push_back(String::from("Hell fucking yeah motherfucker"));
-        // client.send_queue.push_back(String::from("And so I wake in the morning"));
-        // client.send_queue.push_back(String::from("And I step outside"));
-        // client.send_queue.push_back(String::from("And I take a deep breath and I get real high"));
-        // client.send_queue.push_back(String::from("And I scream from the top of my lungs"));
-        // client.send_queue.push_back(String::from("What's going on?"));
-        //
-        //
-        // event_loop.run(&mut client).or_else(|e|{
-        //     println!("Failed to start event loop!");
-        //     Err(e)
-        // });
     }
 }
 
-type RwArcClientInterface = Arc<RwLock<ClientNetworkInterface>>;
+type RwArcClientInterface = Arc<RwLock<ClientInterface>>;
 
-impl Handler for ClientNetworkInterface{
+impl Handler for ClientInterface{
     type Timeout = ();
     type Message = ();
 
-    fn tick(&mut self, _: &mut EventLoop<ClientNetworkInterface>) {
+    fn tick(&mut self, _: &mut EventLoop<ClientInterface>) {
         println!("Begin client tick");
 
         println!("End client tick");
     }
 
-    fn ready(&mut self, event_loop: &mut EventLoop<ClientNetworkInterface>, token: Token, events: EventSet) {
+    fn ready(&mut self, event_loop: &mut EventLoop<ClientInterface>, token: Token, events: EventSet) {
         assert!(token != Token(0), "Token 0, y?????");
 
         if events.is_error(){
@@ -183,7 +158,7 @@ impl Handler for ClientNetworkInterface{
             println!("OH shit, what've you got to say?");
         }
 
-        let mut client_rereg = self.client.clone();
+        let client_rereg = self.client.clone();
         self.reregister(event_loop, client_rereg);
         //self.debug.fetch_add(1, Ordering::SeqCst);
     }
@@ -209,10 +184,10 @@ fn connect(){
 
         println!("Starting thing");
         let mut event_loop = Arc::new(RwLock::new(EventLoop::new().ok().expect("Failed to create event loop!")));
-        let mut client = Arc::new(RwLock::new(Client::new()));
+        let mut client = Arc::new(RwLock::new(ClientData::new()));
 
         let interface_event_loop = event_loop.clone();
-        let mut client_interface = ClientNetworkInterface::new(interface_event_loop, socket.unwrap(), client.clone());
+        let mut client_interface = ClientInterface::new(interface_event_loop, socket.unwrap(), client.clone());
         println!("Starting debug loop");
 
         if let Ok(mut event_loop_ref) = event_loop.write(){
