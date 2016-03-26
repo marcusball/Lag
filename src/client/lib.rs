@@ -90,7 +90,7 @@ impl ClientInterface{
         }
     }
 
-    fn reregister(&mut self, event_loop: &mut EventLoop<ClientInterface>, client_ref: Arc<RwLock<ClientData>>){
+    fn reregister(&mut self, event_loop: &mut EventLoop<ClientInterface>, client_ref: &Arc<RwLock<ClientData>>){
         if let Ok(client) = client_ref.read(){
             event_loop.reregister(&self.socket, client.token, client.interest, PollOpt::edge())
                 .or_else(|e|{
@@ -152,14 +152,17 @@ impl Handler for ClientInterface{
                     println!("WTF do you mean there's no messages for me?");
                 }
             }
+            else{
+                println!("Nothing to write...");
+            }
         }
 
         if events.is_readable(){
             println!("OH shit, what've you got to say?");
         }
 
-        let client_rereg = self.client.clone();
-        self.reregister(event_loop, client_rereg);
+        //let client_rereg = self.client.clone();
+        //self.reregister(event_loop, &client_rereg);
         //self.debug.fetch_add(1, Ordering::SeqCst);
     }
 
@@ -184,22 +187,23 @@ pub struct Client{
 
 impl Client{
     /// Connect to the given socket and register with a threaded event loop
-    pub fn connect(socket: TcpStream) -> Client{
-        let event_loop = Arc::new(RwLock::new(EventLoop::new().ok().expect("Failed to create event loop!")));
-        let client_data = Arc::new(RwLock::new(ClientData::new()));
+    pub fn connect(address: &SocketAddr) -> Result<Client>{
+        let socket = try!(TcpStream::connect(address));
+            let event_loop = Arc::new(RwLock::new(EventLoop::new().ok().expect("Failed to create event loop!")));
+            let client_data = Arc::new(RwLock::new(ClientData::new()));
 
-        let interface_event_loop = event_loop.clone();
-        let client_interface = ClientInterface::new(interface_event_loop, socket, client_data.clone());
+            let interface_event_loop = event_loop.clone();
+            let client_interface = ClientInterface::new(interface_event_loop, socket, client_data.clone());
 
-        let mut client = Client{
-            data: client_data,
-            interface: client_interface,
-            event_loop: event_loop
-        };
+            let mut client = Client{
+                data: client_data,
+                interface: client_interface,
+                event_loop: event_loop
+            };
 
-        client.register();
+            client.register();
 
-        return client;
+            return Ok(client);
     }
 
     /// Register with the event loop
@@ -210,41 +214,55 @@ impl Client{
             }
         }
     }
-}
 
-#[test]
-fn connect(){
-    let addr = "127.0.0.1:6969".parse().unwrap();
-
-    let mut socket = TcpStream::connect(&addr);
-    if socket.is_ok(){
-        println!("Starting thing");
-
-        let mut client = Client::connect(socket.unwrap());
-
-        // if let Ok(mut client_ref) = client.write(){
-        //     client_ref.send_queue.push_front(String::from("Hello, world!"));
-        // }
-
-        //loop{
-            // if client.debug.load(Ordering::Relaxed) > 0{
-            //     break;
-            // }
-        //}
-
-        //println!("Done with this shit");
+    /// Register with the event loop
+    fn reregister(&mut self){
+        if let Ok(mut event_loop) = self.event_loop.write(){
+            if let Ok(mut interface) = self.interface.write(){
+                interface.reregister(&mut event_loop, &self.data);
+            }
+        }
     }
-    else{
-        println!("Failed to open socket! {:?}", socket.unwrap_err());
+
+    pub fn send_message(&mut self, message: String){
+        if let Ok(mut data) = self.data.write(){
+            data.send_queue.push_back(message);
+        } else { return; }
+
+        self.reregister();
     }
 }
 
 #[cfg(test)]
 mod test {
-    use mio::tcp::*;
-    use mio::TryWrite;
+    use std::time::Duration;
     use std::net::SocketAddr;
-    //use lag_client::Client;
+    use std::thread;
+    use super::Client;
 
+    #[test]
+    fn connect(){
+        let addr = "127.0.0.1:6969".parse().unwrap();
 
+        if let Ok(mut client) = Client::connect(&addr){
+
+            client.send_message(String::from("Hello, world!"));
+            // if let Ok(mut client_ref) = client.write(){
+            //     client_ref.send_queue.push_front(String::from("Hello, world!"));
+            // }
+
+            thread::sleep(Duration::new(1,0));
+
+        }
+
+            //loop{
+                // if client.debug.load(Ordering::Relaxed) > 0{
+                //     break;
+                // }
+            //}
+
+            //loop {}
+
+            //println!("Done with this shit");
+    }
 }
