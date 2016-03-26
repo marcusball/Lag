@@ -13,7 +13,7 @@ use std::sync::{Arc, RwLock, Condvar};
 //use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::collections::VecDeque;
-use crossbeam::Scope;
+//use crossbeam::Scope;
 
 const CLIENT_TOKEN: mio::Token = mio::Token(1);
 
@@ -26,7 +26,7 @@ pub struct ClientNetworkInterface{
 }
 
 impl ClientNetworkInterface{
-    pub fn new(event_loop: &mut EventLoop<ClientNetworkInterface>, socket: TcpStream, client: Arc<RwLock<Client>>) -> Arc<RwLock<ClientNetworkInterface>>{
+    pub fn new(event_loop: Arc<RwLock<EventLoop<ClientNetworkInterface>>>, socket: TcpStream, client: Arc<RwLock<Client>>) -> Arc<RwLock<ClientNetworkInterface>>{
         let interface = Arc::new(RwLock::new(ClientNetworkInterface{
             socket: socket,
             //thread_handle: Arc::new(None),
@@ -35,16 +35,27 @@ impl ClientNetworkInterface{
 
         let thread_interface = interface.clone();
         println!("Before");
-        crossbeam::scope(|scope|{
-            scope.spawn(||{
-                println!("thread start");
-                loop{
+        thread::spawn(move||{
+            println!("Hello from thread!");
+
+            loop{
+                if let Ok(mut event_loop) = event_loop.write(){
                     if let Ok(mut client_interface) = thread_interface.write(){
                         event_loop.run_once(&mut client_interface, None);
                     }
                 }
-            });
+            }
         });
+        // crossbeam::scope(|scope|{
+        //     scope.spawn(||{
+        //         println!("thread start");
+        //         loop{
+        //             if let Ok(mut client_interface) = thread_interface.write(){
+        //                 event_loop.run_once(&mut client_interface, None);
+        //             }
+        //         }
+        //     });
+        // });
         println!("after");
 
         // if let Ok(interface_mut) = interface.write(){
@@ -54,7 +65,7 @@ impl ClientNetworkInterface{
         return interface;
     }
 
-    fn register(&mut self, event_loop: &mut EventLoop<ClientNetworkInterface>, client_ref: Arc<RwLock<Client>>){
+    fn register(&mut self, event_loop: &mut EventLoop<ClientNetworkInterface>, client_ref: &Arc<RwLock<Client>>){
         if let Ok(client) = client_ref.read(){
             event_loop.register(
                 &self.socket,
@@ -197,13 +208,21 @@ fn connect(){
     if socket.is_ok(){
 
         println!("Starting thing");
-        let mut event_loop = EventLoop::new().ok().expect("Failed to create event loop!");
+        let mut event_loop = Arc::new(RwLock::new(EventLoop::new().ok().expect("Failed to create event loop!")));
         let mut client = Arc::new(RwLock::new(Client::new()));
-        let mut client_interface = ClientNetworkInterface::new(&mut event_loop, socket.unwrap(), client.clone());
+
+        let interface_event_loop = event_loop.clone();
+        let mut client_interface = ClientNetworkInterface::new(interface_event_loop, socket.unwrap(), client.clone());
         println!("Starting debug loop");
 
-        if let Ok(mut interface) = client_interface.write(){
-            interface.register(&mut event_loop, client);
+        if let Ok(mut event_loop_ref) = event_loop.write(){
+            if let Ok(mut interface) = client_interface.write(){
+                interface.register(&mut event_loop_ref, &client);
+            }
+        }
+
+        if let Ok(mut client_ref) = client.write(){
+            client_ref.send_queue.push_front(String::from("Hello, world!"));
         }
 
 
