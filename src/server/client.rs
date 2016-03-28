@@ -6,9 +6,17 @@ use mio::{Token, EventLoop, EventSet, PollOpt, TryRead};
 use mio::tcp::{TcpStream};
 //use byteorder::{ByteOrder, BigEndian, LittleEndian};
 
+/// The state of the client's connection
+pub enum ClientState{
+    Connected,          // The TCP connection has been opened
+    Hello,              // The client has sent an initial "hello message"
+    Athenticated        // The client has successfully authenticated
+}
+
 pub struct GameClient{
     socket: TcpStream,
-    token: Token
+    token: Token,
+    state: ClientState
 }
 
 impl GameClient{
@@ -16,6 +24,7 @@ impl GameClient{
         GameClient {
             socket: socket,
             token: token,
+            state: ClientState::Connected
         }
     }
 

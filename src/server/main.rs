@@ -5,6 +5,10 @@ extern crate byteorder;
 mod authoritative;
 mod client;
 
+#[path="../shared/frame.rs"]
+mod frame;
+use frame::MessageFrame;
+
 use authoritative::AuthoritativeServer;
 
 use std::net::SocketAddr;

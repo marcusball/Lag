@@ -18,6 +18,8 @@ use std::sync::{Arc, RwLock};
 use std::sync::atomic::AtomicUsize;
 //use std::collections::HashMap;
 
+use frame::MessageFrame;
+
 
 const SERVER_TOKEN: mio::Token = mio::Token(1);
 
