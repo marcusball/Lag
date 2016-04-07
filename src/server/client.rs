@@ -19,7 +19,7 @@ pub enum ClientState{
 
 pub struct GameClient{
     socket: TcpStream,
-    token: Token,
+    pub token: Token,
     state: ClientState
 }
 
@@ -64,49 +64,30 @@ impl GameClient{
         })
     }
 
-    pub fn read(&mut self) -> Result<Option<u64>>{
-        //println!("Fuck yeah!");
-
-        // let mut buf = [0u8; 12];
-
-        // let bytes_read = match self.socket.try_read(&mut buf){
-            // Ok(None) => { return Ok(None); },
-            // Ok(Some(n)) => n,
-            // Err(e) => { return Err(e); }
-        // };
-
-        //let some_fucking_value = BigEndian::read_u16(buf[0..2].as_ref());
-
-        //println!("Read {}", some_fucking_value);
-
-        let mut recv_buf : Vec<u8> = Vec::with_capacity(8);
-
+    pub fn read(&mut self) -> Result<Message>{
+        // Create the socket from which we will read
         let read_socket = <TcpStream as Read>::by_ref(&mut self.socket);
 
-        // match read_socket.take(8).try_read_buf(&mut recv_buf){
-        //     Ok(None) => {},
-        //     Ok(Some(n)) => {},
-        //     Err(e) => {}
-        // };
-
+        // Read the message from the socket
         let message = Message::read(read_socket);
 
         match message{
             Ok(message) => {
                 match message{
-                    Message::Text{message: message_text} => {
-                        println!("Received message: {}", message_text);
+                    Message::Text{message: ref message_text} => {
+                        println!("Received message: {}", &message_text);
                     },
                     Message::Ping => {
                         println!("Received Ping!");
                     }
                 }
+
+                return Ok(message);
             },
             Err(e) => {
                 println!("SHITS FUCKED UP! {:?}", e);
+                return Err(e);
             }
         }
-
-        Ok(None)
     }
 }

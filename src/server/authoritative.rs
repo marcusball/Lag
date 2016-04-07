@@ -18,9 +18,6 @@ use std::sync::{Arc, RwLock};
 use std::sync::atomic::AtomicUsize;
 //use std::collections::HashMap;
 
-use frame::MessageHeader;
-
-
 const SERVER_TOKEN: mio::Token = mio::Token(1);
 
 #[derive(Clone)]
@@ -137,7 +134,7 @@ impl AuthoritativeServer{
 
     fn get_client<'a, F>(&'a mut self, token: Token, action: F) -> Result<(), String>
         where F: Fn(&GameClient) {
-        if let Ok(mut clients) = self.state.clients.read(){
+        if let Ok(clients) = self.state.clients.read(){
             if clients.contains(token){
                 let ref mut client = clients.get(token).expect("Clients contains token, but was unable to access client!");
 
@@ -203,7 +200,19 @@ impl Handler for AuthoritativeServer{
             }
             else{
                 self.get_client_mut(token, |client|{
-                    if client.read().is_ok(){
+                    let message = client.read();
+                    match &message{
+                        &Ok(ref message) => {
+                            println!("Server received message from {:?}", client.token);
+
+                        },
+                        &Err(ref e) => {
+                            println!("Error reading from {:?}! {:?}", client.token, e);
+                        }
+                    }
+
+
+                    if message.is_ok(){
                         client.reregister(event_loop).expect("Failed to reregister!");
                     }
                 }).ok();
