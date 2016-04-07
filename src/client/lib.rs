@@ -1,4 +1,9 @@
 extern crate mio;
+extern crate byteorder;
+
+#[path="../shared/frame.rs"]
+mod frame;
+use frame::{MessageFrame, ToFrame, Message};
 
 use mio::tcp::*;
 use mio::TryWrite;
@@ -22,7 +27,7 @@ pub struct ClientData{
 
     interest: EventSet,
 
-    send_queue: VecDeque<String>,
+    send_queue: VecDeque<MessageFrame>,
 }
 
 impl ClientData{
@@ -129,18 +134,18 @@ impl Handler for ClientInterface{
 
             if let Ok(mut client) = self.client.write(){
                 if !client.send_queue.is_empty(){
-                    if let Some(message) = client.send_queue.pop_front(){
-                        match self.socket.try_write(message.as_bytes()){
+                    if let Some(message_frame) = client.send_queue.pop_front(){
+                        match self.socket.try_write(message_frame.to_bytes().as_slice()){
                             Ok(Some(n)) => {
                                 println!("Wrote {} bytes", n);
                             },
                             Ok(None) => {
                                 println!("Nothing happened but it's okay I guess?");
-                                client.send_queue.push_back(message);
+                                client.send_queue.push_back(message_frame);
                             },
                             Err(e) => {
                                 println!("Oh fuck me god fucking damn it fucking shit fuck: {:?}", e);
-                                client.send_queue.push_back(message);
+                                client.send_queue.push_back(message_frame);
                             }
                         };
                     }
@@ -224,9 +229,9 @@ impl Client{
         }
     }
 
-    pub fn send_message(&mut self, message: String){
+    pub fn send_message<T: ToFrame>(&mut self, message: &T){
         if let Ok(mut data) = self.data.write(){
-            data.send_queue.push_back(message);
+            data.send_queue.push_back(message.to_frame());
         } else { return; }
 
         self.reregister();
@@ -240,13 +245,17 @@ mod test {
     use std::thread;
     use super::Client;
 
+    #[path="../../shared/frame.rs"]
+    mod frame;
+    use frame::{MessageHeader, ToFrame, Message};
+
     #[test]
     fn connect(){
         let addr = "127.0.0.1:6969".parse().unwrap();
 
         if let Ok(mut client) = Client::connect(&addr){
-
-            client.send_message(String::from("Hello, world!"));
+            let message = Message::new_text_message(String::from("Hello, world!"));
+            client.send_message(&message);
             // if let Ok(mut client_ref) = client.write(){
             //     client_ref.send_queue.push_front(String::from("Hello, world!"));
             // }

@@ -1,16 +1,13 @@
 extern crate mio;
 extern crate bytes;
 extern crate byteorder;
-#[macro_use]
-extern crate enum_primitive;
-extern crate num;
 
 mod authoritative;
 mod client;
 
 #[path="../shared/frame.rs"]
 mod frame;
-use frame::MessageFrame;
+use self::frame::MessageHeader;
 
 use authoritative::AuthoritativeServer;
 

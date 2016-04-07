@@ -2,9 +2,13 @@ use authoritative::AuthoritativeServer;
 use std::io::Result;
 //use std::io;
 use std::io::prelude::*;
-use mio::{Token, EventLoop, EventSet, PollOpt, TryRead};
+use mio::{Token, EventLoop, EventSet, PollOpt};
 use mio::tcp::{TcpStream};
 //use byteorder::{ByteOrder, BigEndian, LittleEndian};
+
+#[path="../shared/frame.rs"]
+mod frame;
+use self::frame::Message;
 
 /// The state of the client's connection
 pub enum ClientState{
@@ -85,23 +89,23 @@ impl GameClient{
         //     Err(e) => {}
         // };
 
-        let mut total_bytes = 0;
-        while let Some(b) = read_socket.take(8).try_read_buf(&mut recv_buf).ok(){
-            match b{
-                None => { break; },
-                Some(bytes) => {
-                    total_bytes += bytes;
-                },
-            };
+        let message = Message::read(read_socket);
+
+        match message{
+            Ok(message) => {
+                match message{
+                    Message::Text{message: message_text} => {
+                        println!("Received message: {}", message_text);
+                    },
+                    Message::Ping => {
+                        println!("Received Ping!");
+                    }
+                }
+            },
+            Err(e) => {
+                println!("SHITS FUCKED UP! {:?}", e);
+            }
         }
-
-        recv_buf.truncate(total_bytes);
-
-        //println!("Received: {:?}, {} bytes", recv_buf, total_bytes);
-
-        let message : String = String::from_utf8(recv_buf).expect("Failed to read message!");
-
-        println!("Received message: {}", message);
 
         Ok(None)
     }
