@@ -216,7 +216,7 @@ mod test{
     use byteorder::{ByteOrder, BigEndian};
 
     #[test]
-    fn testReadHeader(){
+    fn test_read_header(){
         // Send the message `LAG!0003`
         let test_message = vec!['L' as u8, 'A' as u8, 'G' as u8, '!' as u8, 1u8, 0u8, 0u8, 0u8, 3u8];
         let message = MessageHeader::read_slice(test_message.as_slice()).unwrap();
@@ -226,7 +226,7 @@ mod test{
     }
 
     #[test]
-    fn testIsValid(){
+    fn test_is_valid(){
         // Send the message `LAG!0003`
         let test_message = vec!['L' as u8, 'A' as u8, 'G' as u8, '!' as u8, 1u8, 0u8, 0u8, 0u8, 3u8];
         let message = MessageHeader::read_slice(test_message.as_slice()).unwrap();
@@ -235,7 +235,7 @@ mod test{
     }
 
     #[test]
-    fn testTextMessageToFrame(){
+    fn test_text_message_to_frame(){
         let test_message = Message::new_text_message(String::from("Test"));
 
         let frame = test_message.to_frame();
@@ -244,7 +244,7 @@ mod test{
     }
 
     #[test]
-    fn testMessageToBytes(){
+    fn test_message_to_bytes(){
         let test_message_output = vec!['L' as u8, 'A' as u8, 'G' as u8, '!' as u8, 1u8, 0u8, 0u8, 0u8, 4u8, 'T' as u8, 'e' as u8, 's' as u8, 't' as u8];
         let test_message = Message::new_text_message(String::from("Test"));
 

@@ -16,7 +16,7 @@ use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
 //use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::atomic::AtomicUsize;
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 
 #[path="../shared/frame.rs"]
 mod frame;
