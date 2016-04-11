@@ -147,7 +147,7 @@ impl AuthoritativeServer{
 
     fn get_client<'a, F>(&'a mut self, token: Token, action: F) -> Result<(), String>
         where F: Fn(&GameClient) {
-        if let Ok(mut clients) = self.state.clients.read(){
+        if let Ok(clients) = self.state.clients.read(){
             if clients.contains(token){
                 let ref mut client = clients.get(token).expect("Clients contains token, but was unable to access client!");
 
@@ -214,9 +214,6 @@ impl Handler for AuthoritativeServer{
             else{
                 let message = self.get_client_mut(token, |client|{
                     return client.read();
-                    // if client.read().is_ok(){
-                    //     client.reregister(event_loop).expect("Failed to reregister!");
-                    // }
                 }).ok();
 
                 if let Some(Ok(message)) = message{

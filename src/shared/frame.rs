@@ -127,9 +127,6 @@ impl Message{
             //_ => { return Err(Error::new(ErrorKind::InvalidInput, format!("Received an unhandled message type, {:?}!", header.code))); }
         };
 
-        let mut garbage = Vec::new();
-        let _ = input.read_to_end(&mut garbage);
-
         return message;
     }
 
