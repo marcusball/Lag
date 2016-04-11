@@ -236,9 +236,6 @@ impl Handler for AuthoritativeServer{
                 client.write()
             }).ok();
         }
-        else{
-            println!("[{:?} silence intensifies]", token);
-        }
 
         if events.is_readable(){
             println!("GOT SHIT TO READ FROM MY BRAH {:?} HELLLL YEAH", token);

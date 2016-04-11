@@ -78,6 +78,7 @@ impl GameClient{
 
         println!("Sending message to {:?}", self.token);
         if let Some(output_message) = self.send_queue.pop_front(){
+            println!("Sending {:?} to client!", output_message);
             let output_bytes = output_message.to_frame().to_bytes();
             write_socket.write(&output_bytes).ok();
         }

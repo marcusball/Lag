@@ -9,7 +9,7 @@ use mio::tcp::*;
 use mio::TryWrite;
 use mio::util::Slab;
 use std::net::SocketAddr;
-use std::io::Result;
+use std::io::{Result, Read, Error, ErrorKind};
 use mio::{EventSet, EventLoop, Token, Handler, PollOpt};
 use std::thread;
 use std::thread::JoinHandle;
@@ -35,8 +35,20 @@ impl ClientData{
         ClientData {
             send_queue: VecDeque::new(),
             token: CLIENT_TOKEN,
-            interest: EventSet::readable() | EventSet::writable()
+            interest: EventSet::readable()
         }
+    }
+
+    fn set_writable(&mut self){
+        self.interest.insert(EventSet::writable());
+    }
+
+    fn set_read_only(&mut self){
+        self.interest.remove(EventSet::writable());
+    }
+
+    fn has_messages_to_send(&self) -> bool{
+        !self.send_queue.is_empty()
     }
 }
 
@@ -81,8 +93,8 @@ impl ClientInterface{
         return interface;
     }
 
-    fn register(&mut self, event_loop: &mut EventLoop<ClientInterface>, client_ref: &Arc<RwLock<ClientData>>){
-        if let Ok(client) = client_ref.read(){
+    fn register(&mut self, event_loop: &mut EventLoop<ClientInterface>){
+        if let Ok(client) = self.client.read(){
             event_loop.register(
                 &self.socket,
                 client.token,
@@ -91,18 +103,62 @@ impl ClientInterface{
             ).or_else(|e| {
                 println!("Failed to register server! {:?}", e);
                 Err(e)
-            });
+            }).ok();
         }
     }
 
-    fn reregister(&mut self, event_loop: &mut EventLoop<ClientInterface>, client_ref: &Arc<RwLock<ClientData>>){
-        if let Ok(client) = client_ref.read(){
+    fn reregister(&mut self, event_loop: &mut EventLoop<ClientInterface>){
+        if let Ok(client) = self.client.read(){
             event_loop.reregister(&self.socket, client.token, client.interest, PollOpt::edge())
                 .or_else(|e|{
                     println!("I am a sad panda, {:?}", e);
                     Err(e)
-            });
+            }).ok();
         }
+    }
+
+    pub fn read(&mut self) -> Result<Message>{
+        let read_socket = <TcpStream as Read>::by_ref(&mut self.socket);
+
+        // Read the message from the socket
+        let message = Message::read(read_socket);
+
+        match message{
+            Ok(message) => {
+                match message{
+                    Message::Text{message: ref message_text} => {
+                        println!("Received message: {}", &message_text);
+                    },
+                    Message::Ping => {
+                        println!("Received Ping!");
+                    }
+                }
+                return Ok(message);
+            },
+            Err(e) => {
+                println!("SHITS FUCKED UP! {:?}", e);
+                return Err(e);
+            }
+        }
+    }
+
+    fn set_writable(&mut self){
+        if let Ok(mut client) = self.client.write(){
+            client.set_writable();
+        }
+    }
+
+    fn set_read_only(&mut self){
+        if let Ok(mut client) = self.client.write(){
+            client.set_read_only();
+        }
+    }
+
+    fn has_messages_to_send(&self) -> bool{
+        if let Ok(client) = self.client.read(){
+            return client.has_messages_to_send();
+        }
+        return false;
     }
 }
 
@@ -110,8 +166,17 @@ impl Handler for ClientInterface{
     type Timeout = ();
     type Message = ();
 
-    fn tick(&mut self, _: &mut EventLoop<ClientInterface>) {
+    fn tick(&mut self, event_loop: &mut EventLoop<ClientInterface>) {
         println!("Begin client tick");
+
+        if self.has_messages_to_send(){
+            self.set_writable();
+        }
+        else{
+            self.set_read_only();
+        }
+
+        self.reregister(event_loop);
 
         println!("End client tick");
     }
@@ -164,6 +229,8 @@ impl Handler for ClientInterface{
 
         if events.is_readable(){
             println!("OH shit, what've you got to say?");
+
+            let _ = self.read();
         }
 
         //let client_rereg = self.client.clone();
@@ -215,7 +282,7 @@ impl Client{
     fn register(&mut self){
         if let Ok(mut event_loop) = self.event_loop.write(){
             if let Ok(mut interface) = self.interface.write(){
-                interface.register(&mut event_loop, &self.data);
+                interface.register(&mut event_loop);
             }
         }
     }
@@ -224,7 +291,7 @@ impl Client{
     fn reregister(&mut self){
         if let Ok(mut event_loop) = self.event_loop.write(){
             if let Ok(mut interface) = self.interface.write(){
-                interface.reregister(&mut event_loop, &self.data);
+                interface.reregister(&mut event_loop);
             }
         }
     }
@@ -232,6 +299,7 @@ impl Client{
     pub fn send_message<T: ToFrame>(&mut self, message: &T){
         if let Ok(mut data) = self.data.write(){
             data.send_queue.push_back(message.to_frame());
+            data.set_writable();
         } else { return; }
 
         self.reregister();
