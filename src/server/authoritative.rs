@@ -145,18 +145,24 @@ impl AuthoritativeServer{
         Err(String::from(format!("No client exists with token {:?}", token)))
     }
 
-    fn get_client<'a, F>(&'a mut self, token: Token, action: F) -> Result<(), String>
-        where F: Fn(&GameClient) {
+    fn get_client<'a, F, R>(&'a self, token: Token, action: F) -> Result<R, String>
+        where F: Fn(&GameClient) -> R{
         if let Ok(clients) = self.state.clients.read(){
             if clients.contains(token){
                 let ref mut client = clients.get(token).expect("Clients contains token, but was unable to access client!");
 
-                action(client);
+                let return_val = action(client);
 
-                return Ok(());
+                return Ok(return_val);
             }
         }
         Err(String::from(format!("No client exists with token {:?}", token)))
+    }
+
+    /// Return TRUE if there are messages bound toward a client given by @token
+    fn has_messages_for_client(&self, client: &GameClient) -> bool{
+        // If there are any messages in messages bound for all clients, then we're good.
+        !client.send_queue.is_empty()
     }
 }
 
@@ -169,9 +175,7 @@ impl Handler for AuthoritativeServer{
 
         if let Ok(mut clients) = self.state.clients.write(){
             for client in clients.iter_mut(){
-                client.reregister(event_loop).ok();
-
-                println!("Populating targetted output queue for {:?}", client.token);
+                // Add any messages to the client which are destined specifically to this client.
                 if let Some(mailbox) = self.state.message_queue.get_mut(&Destination::Client(client.token.clone())){
                     while let Some(message) = mailbox.pop(){
                         println!("Added message {:?}", message);
@@ -179,14 +183,26 @@ impl Handler for AuthoritativeServer{
                     }
                 }
 
-                println!("Populating broadcast output queue for {:?}", client.token);
-                if let Some(mailbox) = self.state.message_queue.get_mut(&Destination::Broadcast){
-                    while let Some(message) = mailbox.pop(){
-                        println!("Added message {:?}", message);
-                        client.send_queue.push_back(message);
+                // Add any 'Broadcast' messages that exist to the client's send queue.
+                if let Some(mailbox) = self.state.message_queue.get(&Destination::Broadcast){
+                    for broadcast_message in mailbox{
+                        println!("Added message {:?}", broadcast_message);
+                        client.send_queue.push_back(broadcast_message.clone());
                     }
                 }
+
+                // Reregister the client with the event loop,
+                // so we continue to receive events for this client
+                let client_register_writable = self.has_messages_for_client(client);
+                client.reregister(event_loop, client_register_writable).ok();
             }
+        }
+
+        // Clear out the broadcast queue
+        // Warning: This assumes no failures to send
+        let ref mut message_queue = self.state.message_queue;
+        if let Some(broadcast_queue) = message_queue.get_mut(&Destination::Broadcast){
+            broadcast_queue.clear();
         }
 
         println!("End server tick!");
@@ -216,6 +232,9 @@ impl Handler for AuthoritativeServer{
             println!("Oh shit, motherfucking {:?} is writable! Look at this guy!", token);
 
             //fucking write some shit
+            self.get_client_mut(token, |client|{
+                client.write()
+            }).ok();
         }
         else{
             println!("[{:?} silence intensifies]", token);
@@ -237,13 +256,13 @@ impl Handler for AuthoritativeServer{
                         Message::Text{ message: _} => {
                             let mut message_queue = &mut self.state.message_queue;
                             if message_queue.contains_key(&Destination::Broadcast){
-                                let broadcast_queue = message_queue.get_mut(&Destination::Broadcast);
-                                if let Some(broadcast_queue) = broadcast_queue{
-                                    broadcast_queue.push(message);
-                                }
-                                else{
-                                    println!("Error: Failed to get mutable destination vec!");
-                                }
+                                // let broadcast_queue = message_queue.get_mut(&Destination::Broadcast);
+                                // if let Some(broadcast_queue) = broadcast_queue{
+                                //     broadcast_queue.push(message);
+                                // }
+                                // else{
+                                //     println!("Error: Failed to get mutable destination vec!");
+                                // }
                             }
                             else{
                                 message_queue.insert(Destination::Broadcast, vec![message]);

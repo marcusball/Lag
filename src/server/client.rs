@@ -9,7 +9,7 @@ use std::collections::VecDeque;
 
 #[path="../shared/frame.rs"]
 mod frame;
-use frame::Message;
+use frame::{Message, MessageFrame, ToFrame};
 
 /// The state of the client's connection
 pub enum ClientState{
@@ -42,7 +42,7 @@ impl GameClient{
         event_loop.register(
             &self.socket,
             self.token,
-            EventSet::readable(),
+            EventSet::readable() | EventSet::writable(),
             PollOpt::edge() | PollOpt::oneshot()
         ).and_then(|(),|{
             Ok(())
@@ -52,13 +52,18 @@ impl GameClient{
         })
     }
 
-    pub fn reregister(&mut self, event_loop: &mut EventLoop<AuthoritativeServer>) -> Result<()>{
+    pub fn reregister(&mut self, event_loop: &mut EventLoop<AuthoritativeServer>, as_writable: bool) -> Result<()>{
         println!("Reregistering token {:?}", self.token);
+
+        let mut event_set = EventSet::readable();
+        if as_writable{
+            event_set = event_set | EventSet::writable();
+        }
 
         event_loop.reregister(
             &self.socket,
             self.token,
-            EventSet::readable(),
+            event_set,
             PollOpt::edge() | PollOpt::oneshot()
         ).and_then(|(),|{
             Ok(())
@@ -66,6 +71,18 @@ impl GameClient{
             println!("Failed to reregister {:?}, {:?}", self.token, e);
             Err(e)
         })
+    }
+
+    pub fn write(&mut self) -> Result<()>{
+        let write_socket = <TcpStream as Write>::by_ref(&mut self.socket);
+
+        println!("Sending message to {:?}", self.token);
+        if let Some(output_message) = self.send_queue.pop_front(){
+            let output_bytes = output_message.to_frame().to_bytes();
+            write_socket.write(&output_bytes).ok();
+        }
+
+        return Ok(());
     }
 
     pub fn read(&mut self) -> Result<Message>{
