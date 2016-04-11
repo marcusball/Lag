@@ -8,7 +8,7 @@ use mio::tcp::{TcpStream};
 
 #[path="../shared/frame.rs"]
 mod frame;
-use self::frame::Message;
+use frame::Message;
 
 /// The state of the client's connection
 pub enum ClientState{
@@ -64,7 +64,7 @@ impl GameClient{
         })
     }
 
-    pub fn read(&mut self) -> Result<Option<u64>>{
+    pub fn read(&mut self) -> Result<Message>{
         //println!("Fuck yeah!");
 
         // let mut buf = [0u8; 12];
@@ -94,19 +94,21 @@ impl GameClient{
         match message{
             Ok(message) => {
                 match message{
-                    Message::Text{message: message_text} => {
+                    Message::Text{message: ref message_text} => {
                         println!("Received message: {}", message_text);
                     },
                     Message::Ping => {
                         println!("Received Ping!");
                     }
                 }
+                return Ok(message);
             },
             Err(e) => {
                 println!("SHITS FUCKED UP! {:?}", e);
+                return Err(e);
             }
         }
 
-        Ok(None)
+
     }
 }

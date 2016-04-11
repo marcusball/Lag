@@ -7,7 +7,7 @@ mod client;
 
 #[path="../shared/frame.rs"]
 mod frame;
-use self::frame::MessageHeader;
+use frame::MessageHeader;
 
 use authoritative::AuthoritativeServer;
 

@@ -16,17 +16,26 @@ use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
 //use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::atomic::AtomicUsize;
-//use std::collections::HashMap;
+use std::collections::HashMap;
 
-use frame::MessageHeader;
+#[path="../shared/frame.rs"]
+mod frame;
+use frame::{MessageHeader, Message};
 
 
 const SERVER_TOKEN: mio::Token = mio::Token(1);
 
+#[derive(Hash, Eq, PartialEq, Debug, Clone)]
+enum Destination{
+    Client(Token),
+    Broadcast
+}
+
 #[derive(Clone)]
 pub struct AuthoritativeServerState{
     clients: Arc<RwLock<Slab<GameClient>>>,
-    token_counter: Arc<AtomicUsize>
+    token_counter: Arc<AtomicUsize>,
+    message_queue: HashMap<Destination, Vec<Message>>
 }
 
 impl AuthoritativeServerState{
@@ -34,7 +43,8 @@ impl AuthoritativeServerState{
         AuthoritativeServerState{
             token_counter: Arc::new(AtomicUsize::new(1)),
             // Max 128 connections
-            clients: Arc::new(RwLock::new(Slab::new_starting_at(Token(2), 128)))
+            clients: Arc::new(RwLock::new(Slab::new_starting_at(Token(2), 128))),
+            message_queue: HashMap::new()
         }
     }
 }
@@ -121,15 +131,15 @@ impl AuthoritativeServer{
         }
     }
 
-    fn get_client_mut<'a, F>(&'a mut self, token: Token, mut action: F) -> Result<(), String>
-        where F: FnMut(&mut GameClient) {
+    fn get_client_mut<'a, F, R>(&'a mut self, token: Token, mut action: F) -> Result<R, String>
+        where F: FnMut(&mut GameClient) -> R {
         if let Ok(mut clients) = self.state.clients.write(){
             if clients.contains(token){
                 let ref mut client = clients.get_mut(token).unwrap();
 
-                action(client);
+                let return_val = action(client);
 
-                return Ok(());
+                return Ok(return_val);
             }
         }
         Err(String::from(format!("No client exists with token {:?}", token)))
@@ -202,11 +212,39 @@ impl Handler for AuthoritativeServer{
                 self.start_accept_loop(event_loop);
             }
             else{
-                self.get_client_mut(token, |client|{
-                    if client.read().is_ok(){
-                        client.reregister(event_loop).expect("Failed to reregister!");
-                    }
+                let message = self.get_client_mut(token, |client|{
+                    return client.read();
+                    // if client.read().is_ok(){
+                    //     client.reregister(event_loop).expect("Failed to reregister!");
+                    // }
                 }).ok();
+
+                if let Some(Ok(message)) = message{
+                    match message{
+                        Message::Text{ message: _} => {
+                            let mut message_queue = &mut self.state.message_queue;
+                            if message_queue.contains_key(&Destination::Broadcast){
+                                let broadcast_queue = message_queue.get_mut(&Destination::Broadcast);
+                                if let Some(broadcast_queue) = broadcast_queue{
+                                    broadcast_queue.push(message);
+                                }
+                                else{
+                                    println!("Error: Failed to get mutable destination vec!");
+                                }
+                            }
+                            else{
+                                message_queue.insert(Destination::Broadcast, vec![message]);
+                            }
+                        },
+
+                        Message::Ping => {
+                            //self.state.message_queue.insert(Destination::Broadcast, message);
+                        }
+                    };
+                }
+                else{
+                    println!("Error reading from client!");
+                }
             }
         }
     }

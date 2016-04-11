@@ -93,6 +93,7 @@ impl MessageHeader{
 
 
 
+#[derive(Hash, Eq, PartialEq, Debug, Clone)]
 pub enum Message{
     Ping,
     Text{ message: String }
