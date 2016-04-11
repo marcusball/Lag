@@ -4,6 +4,7 @@ use std::io::Result;
 use std::io::prelude::*;
 use mio::{Token, EventLoop, EventSet, PollOpt};
 use mio::tcp::{TcpStream};
+use std::collections::VecDeque;
 //use byteorder::{ByteOrder, BigEndian, LittleEndian};
 
 #[path="../shared/frame.rs"]
@@ -20,7 +21,9 @@ pub enum ClientState{
 pub struct GameClient{
     socket: TcpStream,
     pub token: Token,
-    state: ClientState
+    state: ClientState,
+
+    pub send_queue: VecDeque<Message>
 }
 
 impl GameClient{
@@ -28,7 +31,8 @@ impl GameClient{
         GameClient {
             socket: socket,
             token: token,
-            state: ClientState::Connected
+            state: ClientState::Connected,
+            send_queue: VecDeque::with_capacity(15) // 15 is an arbitrary guess at the average max backlog
         }
     }
 

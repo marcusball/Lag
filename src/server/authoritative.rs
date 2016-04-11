@@ -16,11 +16,11 @@ use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
 //use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::atomic::AtomicUsize;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 #[path="../shared/frame.rs"]
 mod frame;
-use frame::{MessageHeader, Message};
+use frame::{Message};
 
 
 const SERVER_TOKEN: mio::Token = mio::Token(1);
@@ -170,6 +170,22 @@ impl Handler for AuthoritativeServer{
         if let Ok(mut clients) = self.state.clients.write(){
             for client in clients.iter_mut(){
                 client.reregister(event_loop).ok();
+
+                println!("Populating targetted output queue for {:?}", client.token);
+                if let Some(mailbox) = self.state.message_queue.get_mut(&Destination::Client(client.token.clone())){
+                    while let Some(message) = mailbox.pop(){
+                        println!("Added message {:?}", message);
+                        client.send_queue.push_back(message);
+                    }
+                }
+
+                println!("Populating broadcast output queue for {:?}", client.token);
+                if let Some(mailbox) = self.state.message_queue.get_mut(&Destination::Broadcast){
+                    while let Some(message) = mailbox.pop(){
+                        println!("Added message {:?}", message);
+                        client.send_queue.push_back(message);
+                    }
+                }
             }
         }
 
