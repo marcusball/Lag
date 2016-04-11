@@ -57,7 +57,7 @@ impl GameClient{
 
         let mut event_set = EventSet::readable();
         if as_writable{
-            event_set = event_set | EventSet::writable();
+            event_set = EventSet::readable() | EventSet::writable();
         }
 
         event_loop.reregister(

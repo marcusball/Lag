@@ -211,6 +211,8 @@ impl Handler for AuthoritativeServer{
     fn ready(&mut self, event_loop: &mut EventLoop<AuthoritativeServer>, token: Token, events: EventSet) {
         assert!(token != Token(0), "We're not supposed to get a Token(0)!");
 
+        println!("Ready for {:?}", token);
+
         if events.is_error(){
             println!("Error event for token {:?}", token);
             //Reset token?
@@ -253,13 +255,13 @@ impl Handler for AuthoritativeServer{
                         Message::Text{ message: _} => {
                             let mut message_queue = &mut self.state.message_queue;
                             if message_queue.contains_key(&Destination::Broadcast){
-                                // let broadcast_queue = message_queue.get_mut(&Destination::Broadcast);
-                                // if let Some(broadcast_queue) = broadcast_queue{
-                                //     broadcast_queue.push(message);
-                                // }
-                                // else{
-                                //     println!("Error: Failed to get mutable destination vec!");
-                                // }
+                                let broadcast_queue = message_queue.get_mut(&Destination::Broadcast);
+                                if let Some(broadcast_queue) = broadcast_queue{
+                                    broadcast_queue.push(message);
+                                }
+                                else{
+                                    println!("Error: Failed to get mutable destination vec!");
+                                }
                             }
                             else{
                                 message_queue.insert(Destination::Broadcast, vec![message]);
