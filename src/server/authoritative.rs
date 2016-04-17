@@ -22,6 +22,10 @@ use std::collections::HashMap;
 mod frame;
 use frame::{Message};
 
+#[path="../shared/state.rs"]
+mod state;
+use state::{ClientState, GameState};
+
 
 const SERVER_TOKEN: mio::Token = mio::Token(1);
 
@@ -35,7 +39,8 @@ enum Destination{
 pub struct AuthoritativeServerState{
     clients: Arc<RwLock<Slab<GameClient>>>,
     token_counter: Arc<AtomicUsize>,
-    message_queue: HashMap<Destination, Vec<Message>>
+    message_queue: HashMap<Destination, Vec<Message>>,
+    game_state: Arc<RwLock<GameState>>
 }
 
 impl AuthoritativeServerState{
@@ -44,7 +49,8 @@ impl AuthoritativeServerState{
             token_counter: Arc::new(AtomicUsize::new(1)),
             // Max 128 connections
             clients: Arc::new(RwLock::new(Slab::new_starting_at(Token(2), 128))),
-            message_queue: HashMap::new()
+            message_queue: HashMap::new(),
+            game_state: Arc::new(RwLock::new(GameState::new()))
         }
     }
 }

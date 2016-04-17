@@ -9,6 +9,9 @@ mod client;
 mod frame;
 use frame::MessageHeader;
 
+#[path="../shared/state.rs"]
+mod state;
+
 use authoritative::AuthoritativeServer;
 
 use std::net::SocketAddr;

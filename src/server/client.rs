@@ -9,21 +9,21 @@ use std::collections::VecDeque;
 
 #[path="../shared/frame.rs"]
 mod frame;
-use frame::{Message, MessageFrame, ToFrame};
+use frame::{Message, ToFrame};
 
 /// The state of the client's connection
-pub enum ClientState{
-    Connected,          // The TCP connection has been opened
-    Hello,              // The client has sent an initial "hello message"
-    Athenticated        // The client has successfully authenticated
-}
+// pub enum ClientState{
+//     Connected,          // The TCP connection has been opened
+// //    Hello,              // The client has sent an initial "hello message"
+// //    Athenticated        // The client has successfully authenticated
+// }
 
 pub struct GameClient{
     socket: TcpStream,
     pub token: Token,
-    state: ClientState,
+//    state: ClientState,
 
-    pub send_queue: VecDeque<Message>
+    pub send_queue: VecDeque<Message>,
 }
 
 impl GameClient{
@@ -31,7 +31,7 @@ impl GameClient{
         GameClient {
             socket: socket,
             token: token,
-            state: ClientState::Connected,
+//            state: ClientState::Connected,
             send_queue: VecDeque::with_capacity(15) // 15 is an arbitrary guess at the average max backlog
         }
     }
