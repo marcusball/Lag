@@ -24,6 +24,10 @@ use std::collections::VecDeque;
 
 const CLIENT_TOKEN: mio::Token = mio::Token(1);
 
+/// Estimation of the average number of messages that will be received per tick.
+/// Used as the capacity value in Vec::with_capacity(capacity: usize);
+const RECEIVED_MESSAGES_PER_TICK: usize = 2;
+
 
 /// Contains data related to the client
 pub struct ClientData{
@@ -32,6 +36,9 @@ pub struct ClientData{
     interest: EventSet,
 
     send_queue: VecDeque<MessageFrame>,
+
+    // Buffer of received messages
+    receive_queue: Vec<Message>
 }
 
 impl ClientData{
@@ -39,7 +46,8 @@ impl ClientData{
         ClientData {
             send_queue: VecDeque::new(),
             token: CLIENT_TOKEN,
-            interest: EventSet::readable()
+            interest: EventSet::readable(),
+            receive_queue: Vec::with_capacity(RECEIVED_MESSAGES_PER_TICK)
         }
     }
 
@@ -66,7 +74,7 @@ struct ClientInterface{
 
     client: Arc<RwLock<ClientData>>,
 
-    is_connected: bool
+    is_connected: bool,
 }
 
 impl ClientInterface{
@@ -263,7 +271,9 @@ impl Handler for ClientInterface{
 
             match received_message{
                 Ok(message) => {
-
+                    if let Ok(mut data) = self.client.write(){
+                        data.receive_queue.push(message);
+                    }
                 },
                 Err(e) => {
                     println!("Error trying to read! {:?}", e);
@@ -360,6 +370,7 @@ impl Client{
 
     pub fn read(&mut self) -> Result<Message>{
         if let Ok(mut interface) = self.interface.write(){
+            // Suddenly realizing that I just wrote some really confusing code here.
             return interface.read();
         }
         else{
@@ -372,6 +383,18 @@ impl Client{
             return interface.is_connected;
         }
         return false;
+    }
+
+    pub fn pop_received_messages(&mut self) -> Option<Vec<Message>>{
+        if let Ok(mut data) = self.data.write(){
+            if !data.receive_queue.is_empty(){
+                return Some(std::mem::replace(&mut data.receive_queue, Vec::with_capacity(RECEIVED_MESSAGES_PER_TICK)));
+            }
+            else{
+                return None;
+            }
+        }
+        return None;
     }
 }
 
