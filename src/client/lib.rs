@@ -152,9 +152,12 @@ impl ClientInterface{
                     Message::Ping => {
                         println!("Received Ping!");
                     },
-                    Message::ClientUpdate{ position: _, rotation: _} =>{
+                    Message::ClientUpdate(_) =>{
                         println!("PANIC! CLIENT SHOULDN'T RECEIVE A CLIENT UPDATE PACKET!");
                         return Err(Error::new(ErrorKind::Other, String::from("Client received invalid packet type!")));
+                    },
+                    Message::GameStateUpdate( _ ) => {
+                        println!("Received game state update!");
                     }
                 }
                 return Ok(message);
@@ -196,11 +199,9 @@ impl Handler for ClientInterface{
     fn tick(&mut self, event_loop: &mut EventLoop<ClientInterface>) {
         println!("Begin client tick");
 
-        if self.has_messages_to_send(){
-            self.set_writable();
-        }
-        else{
-            self.set_read_only();
+        match self.has_messages_to_send(){
+            true  => { self.set_writable(); },
+            false => { self.set_read_only(); }
         }
 
         if self.is_connected{
@@ -213,12 +214,6 @@ impl Handler for ClientInterface{
 
     fn ready(&mut self, event_loop: &mut EventLoop<ClientInterface>, token: Token, events: EventSet) {
         assert!(token != Token(0), "Token 0, y?????");
-
-        println!("ready from {:?}!", token);
-
-        if token == CLIENT_TOKEN{
-            println!("Why is token ready for self?!?!??!");
-        }
 
         if events.is_error(){
             println!("Client received error for token {:?}", token);
@@ -418,17 +413,6 @@ mod test {
             client.send_message(&message);
 
             thread::sleep(Duration::new(1,0));
-
         }
-
-            //loop{
-                // if client.debug.load(Ordering::Relaxed) > 0{
-                //     break;
-                // }
-            //}
-
-            //loop {}
-
-            //println!("Done with this shit");
     }
 }

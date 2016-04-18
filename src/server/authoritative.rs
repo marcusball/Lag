@@ -278,8 +278,11 @@ impl Handler for AuthoritativeServer{
                             //self.state.message_queue.insert(Destination::Broadcast, message);
                         },
 
-                        Message::ClientUpdate{ position: _, rotation: _} => {
+                        Message::ClientUpdate(_) => {
                             println!("Received client update packet!");
+                        },
+                        Message::GameStateUpdate(_) => {
+                            println!("Error: Received game state update from a client! ");
                         }
                     };
                 }

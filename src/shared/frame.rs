@@ -4,24 +4,26 @@ use byteorder::{ByteOrder, BigEndian};
 
 #[path="../shared/state.rs"]
 mod state;
-use state::ClientState;
+use state::{ClientState, GameState};
 
 const MAGIC_BYTES: u32 = 0x4C414721; // b'LAG!'
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum MessageCode{
-    Text = 0x01,
-    ClientUpdate = 0x02,
-    Ping = 0xFF
+    Text            = 0x01,
+    ClientUpdate    = 0x02,
+    GameStateUpdate = 0x03,
+    Ping            = 0xFF
 }
 
 impl MessageCode{
     pub fn from_u8(byte: u8) -> Option<MessageCode>{
         match byte{
-            1 => { Some(MessageCode::Text) },
-            0x02 => { Some(MessageCode::ClientUpdate) }
+            0x01 => { Some(MessageCode::Text) },
+            0x02 => { Some(MessageCode::ClientUpdate) },
+            0x03 => { Some(MessageCode::GameStateUpdate) },
             0xFF => { Some(MessageCode::Ping) },
-            _ => { None }
+            _    => { None }
         }
     }
 }
@@ -100,11 +102,12 @@ impl MessageHeader{
 
 
 
-#[derive(Hash, Eq, PartialEq, Debug, Clone)]
+#[derive(Hash, Debug, Clone)]
 pub enum Message{
     Ping,
     Text{ message: String },
-    ClientUpdate { position: (i32, i32, i32), rotation: i32 }
+    ClientUpdate (ClientState),
+    GameStateUpdate (Vec<ClientState>)
 }
 
 impl Message{
@@ -113,7 +116,7 @@ impl Message{
     }
 
     pub fn new_client_update_message(client_state: &ClientState) -> Message{
-        Message::ClientUpdate{ position: client_state.position, rotation: client_state.rotation }
+        Message::ClientUpdate( *client_state )
     }
 
     /// Read bytes from the input parameter, and return a parsed Message.
@@ -140,6 +143,10 @@ impl Message{
             MessageCode::ClientUpdate => {
                 println!("Reading client update data!");
                 Self::read_client_update_message(&mut input, &header)
+            },
+            MessageCode::GameStateUpdate => {
+                println!("Received game state update");
+                panic!();
             }
             //_ => { return Err(Error::new(ErrorKind::InvalidInput, format!("Received an unhandled message type, {:?}!", header.code))); }
         };
@@ -171,30 +178,9 @@ impl Message{
     }
 
     fn read_client_update_message<R: Read>(input: &mut R, header: &MessageHeader) -> Result<Message>{
-        let mut message_buf = [0u8; 16];
-        let bytes_read = input.read(&mut message_buf);
-        // Error checking; Make sure we read bytes of the message,
-        // and ensure it's the length the client claimed it would be.
-        match bytes_read{
-            Ok(bytes_read) => {
-                if bytes_read != header.length as usize{
-                    return Err(Error::new(ErrorKind::Other, format!("Expected string of {} bytes, received a string of {} bytes!", header.length, bytes_read)));
-                }
-            },
-            Err(e) => {
-                return Err(e);
-            }
-        }
+        let client_state = try!(ClientState::read(input));
 
-        let mut position = (0i32, 0i32, 0i32);
-        let mut rotation = 0i32;
-
-        position.0 = BigEndian::read_i32(&message_buf[00..04]);
-        position.1 = BigEndian::read_i32(&message_buf[04..08]);
-        position.2 = BigEndian::read_i32(&message_buf[08..12]);
-        rotation   = BigEndian::read_i32(&message_buf[12..16]);
-
-        return Ok(Message::ClientUpdate{position: position, rotation: rotation});
+        return Ok(Message::ClientUpdate(client_state));
     }
 
 
@@ -208,15 +194,20 @@ impl Message{
             &Message::Ping => {
                 return MessageHeader::new(MessageCode::Ping, 0u32).to_bytes();
             },
-            &Message::ClientUpdate{ ref position, ref rotation} =>{
-                let mut buf = [0u8; 16];
+            &Message::ClientUpdate(ref client_state) =>{
+                let mut buf = [0u8; 20];
 
-                BigEndian::write_i32(&mut buf[00..04], position.0);
-                BigEndian::write_i32(&mut buf[04..08], position.1);
-                BigEndian::write_i32(&mut buf[08..12], position.2);
-                BigEndian::write_i32(&mut buf[12..16], *rotation);
+                BigEndian::write_u32(&mut buf[00..04], client_state.id);
+                BigEndian::write_i32(&mut buf[04..08], client_state.position.0);
+                BigEndian::write_i32(&mut buf[08..12], client_state.position.1);
+                BigEndian::write_i32(&mut buf[12..16], client_state.position.2);
+                BigEndian::write_i32(&mut buf[16..20], client_state.rotation);
 
                 return buf.to_vec();
+            },
+            &Message::GameStateUpdate( _ ) => {
+                panic!();
+                return vec![];
             }
         }
     }
@@ -225,7 +216,8 @@ impl Message{
         match self{
             &Message::Text{message: _} => { return MessageCode::Text; },
             &Message::Ping => { return MessageCode::Ping; },
-            &Message::ClientUpdate{ position: _, rotation: _} => { return MessageCode::ClientUpdate; }
+            &Message::ClientUpdate(_) => { return MessageCode::ClientUpdate; },
+            &Message::GameStateUpdate(_) => { return MessageCode::GameStateUpdate; }
         }
     }
 }
@@ -322,8 +314,8 @@ mod test{
         let deserialized_message = Message::read(&mut das_thing).unwrap();
 
         match deserialized_message{
-            Message::ClientUpdate{ position: position, rotation: rotation } => {
-                assert_eq!(position, test_client.position);
+            Message::ClientUpdate(client_state) => {
+                assert_eq!(client_state.position, test_client.position);
             },
             _ => { panic!(); }
         }
