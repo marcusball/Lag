@@ -5,6 +5,10 @@ extern crate byteorder;
 mod frame;
 use frame::{MessageFrame, ToFrame, Message};
 
+#[path="../shared/state.rs"]
+mod state;
+use state::ClientState;
+
 use mio::tcp::*;
 use mio::TryWrite;
 use mio::util::Slab;
@@ -131,6 +135,10 @@ impl ClientInterface{
                     },
                     Message::Ping => {
                         println!("Received Ping!");
+                    },
+                    Message::ClientUpdate{ position: _, rotation: _} =>{
+                        println!("PANIC! CLIENT SHOULDN'T RECEIVE A CLIENT UPDATE PACKET!");
+                        return Err(Error::new(ErrorKind::Other, String::from("Client received invalid packet type!")));
                     }
                 }
                 return Ok(message);

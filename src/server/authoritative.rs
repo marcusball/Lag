@@ -276,6 +276,10 @@ impl Handler for AuthoritativeServer{
 
                         Message::Ping => {
                             //self.state.message_queue.insert(Destination::Broadcast, message);
+                        },
+
+                        Message::ClientUpdate{ position: _, rotation: _} => {
+                            println!("Received client update packet!");
                         }
                     };
                 }

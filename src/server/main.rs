@@ -11,6 +11,7 @@ use frame::MessageHeader;
 
 #[path="../shared/state.rs"]
 mod state;
+use state::ClientState;
 
 use authoritative::AuthoritativeServer;
 

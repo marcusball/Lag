@@ -2,11 +2,16 @@ extern crate byteorder;
 use std::io::{Read, ErrorKind, Result, Error};
 use byteorder::{ByteOrder, BigEndian};
 
+#[path="../shared/state.rs"]
+mod state;
+use state::ClientState;
+
 const MAGIC_BYTES: u32 = 0x4C414721; // b'LAG!'
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum MessageCode{
     Text = 0x01,
+    ClientUpdate = 0x02,
     Ping = 0xFF
 }
 
@@ -96,12 +101,17 @@ impl MessageHeader{
 #[derive(Hash, Eq, PartialEq, Debug, Clone)]
 pub enum Message{
     Ping,
-    Text{ message: String }
+    Text{ message: String },
+    ClientUpdate { position: (i32, i32, i32), rotation: i32 }
 }
 
 impl Message{
     pub fn new_text_message(msg: String) -> Message{
         Message::Text{ message: msg}
+    }
+
+    pub fn new_client_update_message(client_state: &ClientState) -> Message{
+        Message::ClientUpdate{ position: client_state.position, rotation: client_state.rotation }
     }
 
     /// Read bytes from the input parameter, and return a parsed Message.
@@ -123,6 +133,9 @@ impl Message{
             },
             MessageCode::Ping => {
                 Ok(Message::Ping)
+            },
+            MessageCode::ClientUpdate => {
+                Self::read_client_update_message(&mut input, &header)
             }
             //_ => { return Err(Error::new(ErrorKind::InvalidInput, format!("Received an unhandled message type, {:?}!", header.code))); }
         };
@@ -153,6 +166,33 @@ impl Message{
         Ok(Message::Text{message: message})
     }
 
+    fn read_client_update_message<R: Read>(input: &mut R, header: &MessageHeader) -> Result<Message>{
+        let mut message_buf = [0u8; 16];
+        let bytes_read = input.read(&mut message_buf);
+        // Error checking; Make sure we read bytes of the message,
+        // and ensure it's the length the client claimed it would be.
+        match bytes_read{
+            Ok(bytes_read) => {
+                if bytes_read != header.length as usize{
+                    return Err(Error::new(ErrorKind::Other, format!("Expected string of {} bytes, received a string of {} bytes!", header.length, bytes_read)));
+                }
+            },
+            Err(e) => {
+                return Err(e);
+            }
+        }
+
+        let mut position = (0i32, 0i32, 0i32);
+        let mut rotation = 0i32;
+
+        position.0 = BigEndian::read_i32(&message_buf[00..04]);
+        position.1 = BigEndian::read_i32(&message_buf[04..08]);
+        position.2 = BigEndian::read_i32(&message_buf[08..12]);
+        rotation   = BigEndian::read_i32(&message_buf[12..16]);
+
+        return Ok(Message::ClientUpdate{position: position, rotation: rotation});
+    }
+
 
     pub fn to_bytes(&self) -> Vec<u8>{
         match self{
@@ -163,6 +203,16 @@ impl Message{
             },
             &Message::Ping => {
                 return MessageHeader::new(MessageCode::Ping, 0u32).to_bytes();
+            },
+            &Message::ClientUpdate{ ref position, ref rotation} =>{
+                let mut buf = [0u8; 16];
+
+                BigEndian::write_i32(&mut buf[00..04], position.0);
+                BigEndian::write_i32(&mut buf[04..08], position.1);
+                BigEndian::write_i32(&mut buf[08..12], position.2);
+                BigEndian::write_i32(&mut buf[12..16], *rotation);
+
+                return buf.to_vec();
             }
         }
     }
@@ -170,7 +220,8 @@ impl Message{
     fn get_message_code(&self) -> MessageCode{
         match self{
             &Message::Text{message: _} => { return MessageCode::Text; },
-            &Message::Ping => { return MessageCode::Ping; }
+            &Message::Ping => { return MessageCode::Ping; },
+            &Message::ClientUpdate{ position: _, rotation: _} => { return MessageCode::ClientUpdate; }
         }
     }
 }
@@ -213,6 +264,7 @@ impl MessageFrame{
 #[cfg(test)]
 mod test{
     use super::*;
+    use state::ClientState;
     use byteorder::{ByteOrder, BigEndian};
 
     #[test]
@@ -249,5 +301,19 @@ mod test{
         let test_message = Message::new_text_message(String::from("Test"));
 
         assert_eq!(test_message.to_frame().to_bytes(), test_message_output);
+    }
+
+    #[test]
+    fn test_client_update_serialize(){
+        let test_client = ClientState::new(1);
+        let god = Message::new_client_update_message(&test_client);
+        let fucking = god.to_frame();
+        let damn = fucking.to_bytes();
+        let mut motherfucker = damn.clone();
+        let mut shit = motherfucker.as_slice();
+        let mut fuck = shit;//.as_mut();
+        let mut das_thing = fuck.as_ref();
+
+        let deserialized_message = Message::read(&mut das_thing);
     }
 }

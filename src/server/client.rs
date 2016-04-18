@@ -93,22 +93,27 @@ impl GameClient{
         // Read the message from the socket
         let message = Message::read(read_socket);
 
-        match message{
-            Ok(message) => {
-                match message{
-                    Message::Text{message: ref message_text} => {
-                        println!("Received message: {}", &message_text);
-                    },
-                    Message::Ping => {
-                        println!("Received Ping!");
-                    }
-                }
-                return Ok(message);
-            },
-            Err(e) => {
-                println!("SHITS FUCKED UP! {:?}", e);
-                return Err(e);
-            }
-        }
+        return message;
+
+        // match message{
+        //     Ok(message) => {
+        //         match message{
+        //             Message::Text{message: ref message_text} => {
+        //                 println!("Received message: {}", &message_text);
+        //             },
+        //             Message::Ping => {
+        //                 println!("Received Ping!");
+        //             },
+        //             Message::ClientUpdate{position: _, rotation: _} => {
+        //                 println!("Received ")
+        //             }
+        //         }
+        //         return Ok(message);
+        //     },
+        //     Err(e) => {
+        //         println!("SHITS FUCKED UP! {:?}", e);
+        //         return Err(e);
+        //     }
+        // }
     }
 }
