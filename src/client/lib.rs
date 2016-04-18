@@ -2,11 +2,11 @@ extern crate mio;
 extern crate byteorder;
 
 #[path="../shared/frame.rs"]
-mod frame;
+pub mod frame;
 use frame::{MessageFrame, ToFrame, Message};
 
 #[path="../shared/state.rs"]
-mod state;
+pub mod state;
 use state::ClientState;
 
 use mio::tcp::*;
@@ -49,6 +49,7 @@ impl ClientData{
 
     fn set_read_only(&mut self){
         self.interest.remove(EventSet::writable());
+        self.interest.insert(EventSet::readable());
     }
 
     fn has_messages_to_send(&self) -> bool{
@@ -124,6 +125,8 @@ impl ClientInterface{
     pub fn read(&mut self) -> Result<Message>{
         let read_socket = <TcpStream as Read>::by_ref(&mut self.socket);
 
+        println!("Begin client read message");
+        
         // Read the message from the socket
         let message = Message::read(read_socket);
 
@@ -184,6 +187,7 @@ impl Handler for ClientInterface{
             self.set_read_only();
         }
 
+        println!("Reregistering the things");
         self.reregister(event_loop);
 
         println!("End client tick");
@@ -192,13 +196,19 @@ impl Handler for ClientInterface{
     fn ready(&mut self, event_loop: &mut EventLoop<ClientInterface>, token: Token, events: EventSet) {
         assert!(token != Token(0), "Token 0, y?????");
 
+        println!("ready from {:?}!", token);
+
+        if token == CLIENT_TOKEN{
+            println!("Why is token ready for self?!?!??!");
+        }
+
         if events.is_error(){
             println!("Client received error for token {:?}", token);
             return;
         }
 
         if events.is_hup(){
-            println!("Oh shit, did the server crash or some shit?!");
+            println!("Oh shit, did the server ({:?}) crash or some shit?!", token);
             return;
         }
 
@@ -240,6 +250,7 @@ impl Handler for ClientInterface{
 
             let _ = self.read();
         }
+
 
         //let client_rereg = self.client.clone();
         //self.reregister(event_loop, &client_rereg);
@@ -312,6 +323,15 @@ impl Client{
 
         self.reregister();
     }
+
+    pub fn read(&mut self) -> Result<Message>{
+        if let Ok(mut interface) = self.interface.write(){
+            return interface.read();
+        }
+        else{
+            return Err(Error::new(ErrorKind::Other, String::from("Failed to read from client interface!")));
+        }
+    }
 }
 
 #[cfg(test)]
@@ -332,9 +352,6 @@ mod test {
         if let Ok(mut client) = Client::connect(&addr){
             let message = Message::new_text_message(String::from("Hello, world!"));
             client.send_message(&message);
-            // if let Ok(mut client_ref) = client.write(){
-            //     client_ref.send_queue.push_front(String::from("Hello, world!"));
-            // }
 
             thread::sleep(Duration::new(1,0));
 

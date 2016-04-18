@@ -19,6 +19,7 @@ impl MessageCode{
     pub fn from_u8(byte: u8) -> Option<MessageCode>{
         match byte{
             1 => { Some(MessageCode::Text) },
+            0x02 => { Some(MessageCode::ClientUpdate) }
             0xFF => { Some(MessageCode::Ping) },
             _ => { None }
         }
@@ -54,7 +55,7 @@ impl MessageHeader{
         };
 
         if header_buf_length < 9{
-            return Err(Error::new(ErrorKind::Other, "Input length is not long enough!"));
+            return Err(Error::new(ErrorKind::Other, format!("Message header Input length ({}) is not long enough!", header_buf_length)));
         }
 
         return Self::read_slice(header_buf.as_ref());
@@ -62,7 +63,7 @@ impl MessageHeader{
 
     pub fn read_slice(input: &[u8]) -> Result<MessageHeader>{
         if input.len() < 8{
-            return Err(Error::new(ErrorKind::Other, "Input length is not long enough!"));
+            return Err(Error::new(ErrorKind::Other, format!("Message header slice Input length ({}) is not long enough!", input.len())));
         }
 
         let message_code_byte = input[4..5].first().unwrap();
@@ -135,6 +136,7 @@ impl Message{
                 Ok(Message::Ping)
             },
             MessageCode::ClientUpdate => {
+                println!("Reading client update data!");
                 Self::read_client_update_message(&mut input, &header)
             }
             //_ => { return Err(Error::new(ErrorKind::InvalidInput, format!("Received an unhandled message type, {:?}!", header.code))); }
@@ -305,7 +307,8 @@ mod test{
 
     #[test]
     fn test_client_update_serialize(){
-        let test_client = ClientState::new(1);
+        let mut test_client = ClientState::new(1);
+        test_client.position = (1,2,3);
         let god = Message::new_client_update_message(&test_client);
         let fucking = god.to_frame();
         let damn = fucking.to_bytes();
@@ -314,6 +317,13 @@ mod test{
         let mut fuck = shit;//.as_mut();
         let mut das_thing = fuck.as_ref();
 
-        let deserialized_message = Message::read(&mut das_thing);
+        let deserialized_message = Message::read(&mut das_thing).unwrap();
+
+        match deserialized_message{
+            Message::ClientUpdate{ position: position, rotation: rotation } => {
+                assert_eq!(position, test_client.position);
+            },
+            _ => { panic!(); }
+        }
     }
 }
