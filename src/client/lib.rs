@@ -64,7 +64,9 @@ struct ClientInterface{
 
     thread_handle: Option<JoinHandle<()>>,
 
-    client: Arc<RwLock<ClientData>>
+    client: Arc<RwLock<ClientData>>,
+
+    is_connected: bool
 }
 
 impl ClientInterface{
@@ -72,24 +74,27 @@ impl ClientInterface{
         let interface = Arc::new(RwLock::new(ClientInterface{
             socket: socket,
             thread_handle: None,
-            client: client
+            client: client,
+            is_connected: true
         }));
 
         let thread_interface = interface.clone();
-        println!("Before");
         let handle = thread::spawn(move||{
-            println!("Hello from thread!");
-
             loop{
                 if let Ok(mut event_loop) = event_loop.write(){
                     if let Ok(mut client_interface) = thread_interface.write(){
                         event_loop.run_once(&mut client_interface, None);
                     }
                 }
+
+                if let Ok(client_interface) = thread_interface.read(){
+                    if !client_interface.is_connected{
+                        println!("The client has disconnected from the server!");
+                        break;
+                    }
+                }
             }
         });
-
-        println!("after");
 
         if let Ok(mut interface_mut) = interface.write(){
             interface_mut.thread_handle = Some(handle);
@@ -126,7 +131,7 @@ impl ClientInterface{
         let read_socket = <TcpStream as Read>::by_ref(&mut self.socket);
 
         println!("Begin client read message");
-        
+
         // Read the message from the socket
         let message = Message::read(read_socket);
 
@@ -147,7 +152,6 @@ impl ClientInterface{
                 return Ok(message);
             },
             Err(e) => {
-                println!("SHITS FUCKED UP! {:?}", e);
                 return Err(e);
             }
         }
@@ -171,6 +175,10 @@ impl ClientInterface{
         }
         return false;
     }
+
+    fn set_socket_disconnected(&mut self){
+        self.is_connected = false;
+    }
 }
 
 impl Handler for ClientInterface{
@@ -187,8 +195,10 @@ impl Handler for ClientInterface{
             self.set_read_only();
         }
 
-        println!("Reregistering the things");
-        self.reregister(event_loop);
+        if self.is_connected{
+            println!("Reregistering the things");
+            self.reregister(event_loop);
+        }
 
         println!("End client tick");
     }
@@ -248,7 +258,23 @@ impl Handler for ClientInterface{
         if events.is_readable(){
             println!("OH shit, what've you got to say?");
 
-            let _ = self.read();
+            let received_message = self.read();
+
+
+            match received_message{
+                Ok(message) => {
+
+                },
+                Err(e) => {
+                    println!("Error trying to read! {:?}", e);
+                    if let Some(error_number) = e.raw_os_error(){
+                        if error_number == 10057{
+                            println!("Socket is not connected!");
+                            self.set_socket_disconnected();
+                        }
+                    }
+                }
+            }
         }
 
 
@@ -279,22 +305,30 @@ pub struct Client{
 impl Client{
     /// Connect to the given socket and register with a threaded event loop
     pub fn connect(address: &SocketAddr) -> Result<Client>{
-        let socket = try!(TcpStream::connect(address));
-            let event_loop = Arc::new(RwLock::new(EventLoop::new().ok().expect("Failed to create event loop!")));
-            let client_data = Arc::new(RwLock::new(ClientData::new()));
+        let socket = TcpStream::connect(address);
+        match socket{
+            Ok(socket) => {
+                let event_loop = Arc::new(RwLock::new(EventLoop::new().ok().expect("Failed to create event loop!")));
+                let client_data = Arc::new(RwLock::new(ClientData::new()));
 
-            let interface_event_loop = event_loop.clone();
-            let client_interface = ClientInterface::new(interface_event_loop, socket, client_data.clone());
+                let interface_event_loop = event_loop.clone();
+                let client_interface = ClientInterface::new(interface_event_loop, socket, client_data.clone());
 
-            let mut client = Client{
-                data: client_data,
-                interface: client_interface,
-                event_loop: event_loop
-            };
+                let mut client = Client{
+                    data: client_data,
+                    interface: client_interface,
+                    event_loop: event_loop
+                };
 
-            client.register();
+                client.register();
 
-            return Ok(client);
+                return Ok(client);
+            },
+            Err(e) => {
+                println!("Failed to connect! {:?}", e);
+                return Err(e);
+            }
+        }
     }
 
     /// Register with the event loop
@@ -331,6 +365,13 @@ impl Client{
         else{
             return Err(Error::new(ErrorKind::Other, String::from("Failed to read from client interface!")));
         }
+    }
+
+    pub fn is_connected(&self) -> bool{
+        if let Ok(interface) = self.interface.read(){
+            return interface.is_connected;
+        }
+        return false;
     }
 }
 

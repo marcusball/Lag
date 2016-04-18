@@ -48,6 +48,7 @@ impl MessageHeader{
     }
 
     pub fn read<R: Read>(input: &mut R) -> Result<MessageHeader>{
+        println!("begin messageheader::read");
         let mut header_buf = [0u8; 9];
         let header_buf_length = match input.read(&mut header_buf){
             Ok(n) => { n },
@@ -117,6 +118,7 @@ impl Message{
 
     /// Read bytes from the input parameter, and return a parsed Message.
     pub fn read<R: Read>(mut input: &mut R) -> Result<Message>{
+        println!("Begin message::read");
         let header = MessageHeader::read(&mut input);
         if header.is_err(){
             return Err(header.err().unwrap());
