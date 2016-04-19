@@ -40,7 +40,9 @@ pub struct AuthoritativeServerState{
     clients: Arc<RwLock<Slab<GameClient>>>,
     token_counter: Arc<AtomicUsize>,
     message_queue: HashMap<Destination, Vec<Message>>,
-    game_state: Arc<RwLock<GameState>>
+    game_state: GameState,
+
+    game_state_updated: bool
 }
 
 impl AuthoritativeServerState{
@@ -50,7 +52,7 @@ impl AuthoritativeServerState{
             // Max 128 connections
             clients: Arc::new(RwLock::new(Slab::new_starting_at(Token(2), 128))),
             message_queue: HashMap::new(),
-            game_state: Arc::new(RwLock::new(GameState::new()))
+            game_state: GameState::new()
         }
     }
 }
@@ -252,42 +254,53 @@ impl Handler for AuthoritativeServer{
                 self.start_accept_loop(event_loop);
             }
             else{
-                let message = self.get_client_mut(token, |client|{
-                    return client.read();
-                }).ok();
+                loop{
+                    let message = self.get_client_mut(token, |client|{
+                        return client.read();
+                    }).ok();
 
-                if let Some(Ok(message)) = message{
-                    match message{
-                        Message::Text{ message: _} => {
-                            let mut message_queue = &mut self.state.message_queue;
-                            if message_queue.contains_key(&Destination::Broadcast){
-                                let broadcast_queue = message_queue.get_mut(&Destination::Broadcast);
-                                if let Some(broadcast_queue) = broadcast_queue{
-                                    broadcast_queue.push(message);
+                    if let Some(Ok(message)) = message{
+                        match message{
+                            Message::Text{ message: _} => {
+                                let mut message_queue = &mut self.state.message_queue;
+                                if message_queue.contains_key(&Destination::Broadcast){
+                                    let broadcast_queue = message_queue.get_mut(&Destination::Broadcast);
+                                    if let Some(broadcast_queue) = broadcast_queue{
+                                        broadcast_queue.push(message);
+                                    }
+                                    else{
+                                        println!("Error: Failed to get mutable destination vec!");
+                                    }
                                 }
                                 else{
-                                    println!("Error: Failed to get mutable destination vec!");
+                                    message_queue.insert(Destination::Broadcast, vec![message]);
                                 }
-                            }
-                            else{
-                                message_queue.insert(Destination::Broadcast, vec![message]);
-                            }
-                        },
+                            },
 
-                        Message::Ping => {
-                            //self.state.message_queue.insert(Destination::Broadcast, message);
-                        },
+                            Message::Ping => {
+                                //self.state.message_queue.insert(Destination::Broadcast, message);
+                            },
 
-                        Message::ClientUpdate(_) => {
-                            println!("Received client update packet!");
-                        },
-                        Message::GameStateUpdate(_) => {
-                            println!("Error: Received game state update from a client! ");
-                        }
-                    };
-                }
-                else{
-                    println!("Error reading from client!");
+                            Message::ClientUpdate(client_state) => {
+                                println!("Received client update: {:?}", client_state);
+                                if client_state.id as usize != token.as_usize(){
+                                    println!("Error: Imposter trying to send client update! Claimed ID: {}, Token ID: {}", client_state.id, token.as_usize());
+                                }
+                                else{
+                                    println!("Received client update packet! {:?}", client_state);
+                                    self.state.game_state.clients.insert(client_state.id, client_state);
+                                    self.state.game_state_updated = true;
+                                }
+                            },
+                            Message::GameStateUpdate(_) => {
+                                println!("Error: Received game state update from a client! ");
+                            }
+                        };
+                    }
+                    else{
+                        //println!("Error reading from client!");
+                        break;
+                    }
                 }
             }
         }

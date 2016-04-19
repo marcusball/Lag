@@ -195,15 +195,7 @@ impl Message{
                 return MessageHeader::new(MessageCode::Ping, 0u32).to_bytes();
             },
             &Message::ClientUpdate(ref client_state) =>{
-                let mut buf = [0u8; 20];
-
-                BigEndian::write_u32(&mut buf[00..04], client_state.id);
-                BigEndian::write_i32(&mut buf[04..08], client_state.position.0);
-                BigEndian::write_i32(&mut buf[08..12], client_state.position.1);
-                BigEndian::write_i32(&mut buf[12..16], client_state.position.2);
-                BigEndian::write_i32(&mut buf[16..20], client_state.rotation);
-
-                return buf.to_vec();
+                return client_state.to_bytes();
             },
             &Message::GameStateUpdate( _ ) => {
                 panic!();
@@ -301,8 +293,10 @@ mod test{
 
     #[test]
     fn test_client_update_serialize(){
-        let mut test_client = ClientState::new(1);
-        test_client.position = (1,2,3);
+        let mut test_client = ClientState::new(1337);
+        test_client.position = Position(1,2,3);
+        test_client.rotation = Rotation(90);
+
         let god = Message::new_client_update_message(&test_client);
         let fucking = god.to_frame();
         let damn = fucking.to_bytes();
@@ -315,7 +309,9 @@ mod test{
 
         match deserialized_message{
             Message::ClientUpdate(client_state) => {
+                assert_eq!(client_state.id, test_client.id);
                 assert_eq!(client_state.position, test_client.position);
+                assert_eq!(client_state.rotation, test_client.rotation);
             },
             _ => { panic!(); }
         }

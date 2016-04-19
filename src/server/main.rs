@@ -7,7 +7,6 @@ mod client;
 
 #[path="../shared/frame.rs"]
 mod frame;
-use frame::MessageHeader;
 
 #[path="../shared/state.rs"]
 mod state;

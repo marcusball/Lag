@@ -7,7 +7,7 @@ use frame::{MessageFrame, ToFrame, Message};
 
 #[path="../shared/state.rs"]
 pub mod state;
-use state::ClientState;
+use state::{ClientState, Position, Rotation, Transform};
 
 use mio::tcp::*;
 use mio::TryWrite;
@@ -21,6 +21,7 @@ use std::sync::{Arc, RwLock};
 //use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::collections::VecDeque;
+use std::time::Duration;
 
 const CLIENT_TOKEN: mio::Token = mio::Token(1);
 
@@ -38,7 +39,9 @@ pub struct ClientData{
     send_queue: VecDeque<MessageFrame>,
 
     // Buffer of received messages
-    receive_queue: Vec<Message>
+    receive_queue: Vec<Message>,
+
+    client_state: ClientState
 }
 
 impl ClientData{
@@ -47,7 +50,8 @@ impl ClientData{
             send_queue: VecDeque::new(),
             token: CLIENT_TOKEN,
             interest: EventSet::readable(),
-            receive_queue: Vec::with_capacity(RECEIVED_MESSAGES_PER_TICK)
+            receive_queue: Vec::with_capacity(RECEIVED_MESSAGES_PER_TICK),
+            client_state: ClientState::new(CLIENT_TOKEN.as_usize() as u32)
         }
     }
 
@@ -89,18 +93,20 @@ impl ClientInterface{
         let thread_interface = interface.clone();
         let handle = thread::spawn(move||{
             loop{
-                if let Ok(mut event_loop) = event_loop.write(){
-                    if let Ok(mut client_interface) = thread_interface.write(){
+                if let Ok(mut event_loop) = event_loop.try_write(){
+                    if let Ok(mut client_interface) = thread_interface.try_write(){
                         event_loop.run_once(&mut client_interface, None);
                     }
                 }
 
-                if let Ok(client_interface) = thread_interface.read(){
+                if let Ok(client_interface) = thread_interface.try_read(){
                     if !client_interface.is_connected{
                         println!("The client has disconnected from the server!");
                         break;
                     }
                 }
+
+                thread::sleep(Duration::new(0,100));
             }
         });
 
@@ -338,8 +344,9 @@ impl Client{
 
     /// Register with the event loop
     fn register(&mut self){
-        if let Ok(mut event_loop) = self.event_loop.write(){
-            if let Ok(mut interface) = self.interface.write(){
+        if let Ok(mut interface) = self.interface.write(){
+            if let Ok(mut event_loop) = self.event_loop.write(){
+
                 interface.register(&mut event_loop);
             }
         }
@@ -374,10 +381,11 @@ impl Client{
     }
 
     pub fn is_connected(&self) -> bool{
-        if let Ok(interface) = self.interface.read(){
+        if let Ok(interface) = self.interface.try_read(){
             return interface.is_connected;
         }
-        return false;
+        // Only return disconnected when we know for sure it's true
+        return true;
     }
 
     pub fn pop_received_messages(&mut self) -> Option<Vec<Message>>{
@@ -390,6 +398,54 @@ impl Client{
             }
         }
         return None;
+    }
+
+    fn get_client_state(&self) -> Result<ClientState>{
+        if let Ok(data) = self.data.read(){
+            return Ok(data.client_state);
+        }
+        return Err(Error::new(ErrorKind::Other, String::from("Failed to read client state!")));
+    }
+
+    /// Update the @position and @rotation of the client
+    pub fn set_transform(&mut self, transform: Transform){
+        if let Ok(mut data) = self.data.write(){
+            data.client_state.position = transform.position;
+            data.client_state.rotation = transform.rotation;
+        }
+
+        if let Ok(client_state) = self.get_client_state(){
+            // @TODO: Check if there's already a ClientState message in the output queue
+            self.send_message(&Message::new_client_update_message(&client_state));
+        }
+    }
+
+    /// Update the @position of the client
+    /// Maintains the current rotation
+    pub fn set_position(&mut self, position: Position){
+        let current_rotation = self.get_rotation();
+        self.set_transform(Transform::from_components(position, current_rotation));
+    }
+
+    /// Update the @rotation of the client
+    /// Maintains the current position
+    pub fn set_rotation(&mut self, rotation: Rotation){
+        let current_position = self.get_position();
+        self.set_transform(Transform::from_components(current_position, rotation));
+    }
+
+    /// Get the client's current position
+    pub fn get_position(&self) -> Position{ self.get_transform().position }
+
+    /// Get the client's current rotaton
+    pub fn get_rotation(&self) -> Rotation{ self.get_transform().rotation }
+
+    /// Get the client's position and rotation
+    pub fn get_transform(&self) -> Transform{
+        if let Ok(data) = self.data.read(){
+            return Transform::from_components(data.client_state.position, data.client_state.rotation);
+        }
+        panic!();
     }
 }
 
