@@ -93,7 +93,7 @@ impl AuthoritativeServer{
         println!("Running event loop...");
 
         loop{
-            let timeout = event_loop.timeout_ms(123, 5000).unwrap();
+            let timeout = event_loop.timeout_ms(123, 300).unwrap();
             event_loop.run_once(&mut server, None);
             let _ = event_loop.clear_timeout(timeout);
         }
@@ -219,6 +219,22 @@ impl AuthoritativeServer{
             self.state.message_queue.insert(destination, vec![message]);
         }
     }
+
+    fn broadcast(&mut self, message: Message){
+        let mut message_queue = &mut self.state.message_queue;
+        if message_queue.contains_key(&Destination::Broadcast){
+            let broadcast_queue = message_queue.get_mut(&Destination::Broadcast);
+            if let Some(broadcast_queue) = broadcast_queue{
+                broadcast_queue.push(message);
+            }
+            else{
+                println!("Error: Failed to get mutable destination vec!");
+            }
+        }
+        else{
+            message_queue.insert(Destination::Broadcast, vec![message]);
+        }
+    }
 }
 
 impl Handler for AuthoritativeServer{
@@ -227,6 +243,12 @@ impl Handler for AuthoritativeServer{
 
     fn tick(&mut self, event_loop: &mut EventLoop<AuthoritativeServer>) {
         //println!("Begin server tick!");
+
+        if self.state.game_state_updated{
+            let game_state_message = Message::GameStateUpdate(self.state.game_state.clients.values().map(|client| *client).collect::<Vec<ClientState>>());
+            self.broadcast(game_state_message);
+            self.state.game_state_updated = false;
+        }
 
         if let Ok(mut clients) = self.state.clients.write(){
             for client in clients.iter_mut(){

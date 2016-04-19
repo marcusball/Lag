@@ -2,6 +2,7 @@ extern crate byteorder;
 use std::io::{Read, ErrorKind, Result, Error};
 use byteorder::{ByteOrder, BigEndian};
 use std::collections::VecDeque;
+use std::mem;
 
 #[path="../shared/state.rs"]
 mod state;
@@ -147,7 +148,7 @@ impl Message{
             },
             MessageCode::GameStateUpdate => {
                 println!("Received game state update");
-                panic!();
+                Self::read_game_state_update_message(&mut input, &header)
             }
             //_ => { return Err(Error::new(ErrorKind::InvalidInput, format!("Received an unhandled message type, {:?}!", header.code))); }
         };
@@ -184,6 +185,27 @@ impl Message{
         return Ok(Message::ClientUpdate(client_state));
     }
 
+    fn read_game_state_update_message<R: Read>(input: &mut R, header: &MessageHeader) -> Result<Message>{
+        let expected_quantity = header.length / (mem::size_of::<ClientState>() as u32);
+
+        let mut clients = Vec::new();
+
+        loop{
+            if let Ok(client_state) = ClientState::read(input){
+                clients.push(client_state);
+            }
+            else{
+                break;
+            }
+        }
+
+        if clients.len() as u32 != expected_quantity{
+            println!("Error! Received {} clients, expected {}!", clients.len(), expected_quantity);
+        }
+
+        return Ok(Message::GameStateUpdate(clients));
+    }
+
 
     pub fn to_bytes(&self) -> Vec<u8>{
         match self{
@@ -198,8 +220,10 @@ impl Message{
             &Message::ClientUpdate(ref client_state) =>{
                 return client_state.to_bytes();
             },
-            &Message::GameStateUpdate( _ ) => {
-                panic!("UNIMPLEMENTED");
+            &Message::GameStateUpdate( ref game_state ) => {
+                return game_state.iter()
+                            .map(|client_state| client_state.to_bytes())
+                            .fold(Vec::new(), |mut buf, mut mes|{ buf.append(&mut mes); buf });
             }
         }
     }
