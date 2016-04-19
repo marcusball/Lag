@@ -1,3 +1,5 @@
+#[macro_use]
+extern crate log;
 extern crate mio;
 extern crate byteorder;
 
@@ -110,7 +112,7 @@ impl ClientInterface{
 
                 if let Ok(client_interface) = thread_interface.try_read(){
                     if !client_interface.is_connected{
-                        println!("The client has disconnected from the server!");
+                        info!("The client has disconnected from the server!");
                         break;
                     }
                 }
@@ -134,7 +136,7 @@ impl ClientInterface{
                 client.interest,
                 PollOpt::edge() | PollOpt::oneshot()
             ).or_else(|e| {
-                println!("Failed to register server! {:?}", e);
+                info!("Failed to register server! {:?}", e);
                 Err(e)
             }).ok();
         }
@@ -144,7 +146,7 @@ impl ClientInterface{
         if let Ok(client) = self.client.read(){
             event_loop.reregister(&self.socket, client.token, client.interest, PollOpt::edge())
                 .or_else(|e|{
-                    println!("I am a sad panda, {:?}", e);
+                    info!("I am a sad panda, {:?}", e);
                     Err(e)
             }).ok();
         }
@@ -153,7 +155,7 @@ impl ClientInterface{
     pub fn read(&mut self) -> Result<Message>{
         let read_socket = <TcpStream as Read>::by_ref(&mut self.socket);
 
-        println!("Begin client read message");
+        info!("Begin client read message");
 
         // Read the message from the socket
         let message = Message::read(read_socket);
@@ -162,16 +164,16 @@ impl ClientInterface{
             Ok(message) => {
                 match message{
                     Message::Text{message: ref message_text} => {
-                        println!("Received message: {}", &message_text);
+                        info!("Received message: {}", &message_text);
                     },
                     Message::Ping => {
-                        println!("Received Ping!");
+                        info!("Received Ping!");
                     },
                     Message::ClientUpdate(_) =>{
-                        println!("Received client update packet!");
+                        info!("Received client update packet!");
                     },
                     Message::GameStateUpdate( _ ) => {
-                        println!("Received game state update!");
+                        info!("Received game state update!");
                     }
                 }
                 return Ok(message);
@@ -211,7 +213,7 @@ impl Handler for ClientInterface{
     type Message = ();
 
     fn tick(&mut self, event_loop: &mut EventLoop<ClientInterface>) {
-        //println!("Begin client tick");
+        //info!("Begin client tick");
 
         if let Ok(mut data) = self.client.try_write(){
             if data.state_updated{
@@ -232,24 +234,24 @@ impl Handler for ClientInterface{
             self.reregister(event_loop);
         }
 
-        //println!("End client tick");
+        //info!("End client tick");
     }
 
     fn ready(&mut self, event_loop: &mut EventLoop<ClientInterface>, token: Token, events: EventSet) {
         assert!(token != Token(0), "Token 0, y?????");
 
         if events.is_error(){
-            println!("Client received error for token {:?}", token);
+            info!("Client received error for token {:?}", token);
             return;
         }
 
         if events.is_hup(){
-            println!("Oh shit, did the server ({:?}) crash or some shit?!", token);
+            info!("Oh shit, did the server ({:?}) crash or some shit?!", token);
             return;
         }
 
         if events.is_writable(){
-            println!("TIME TO TALK MOTHERFUCKER");
+            info!("TIME TO TALK MOTHERFUCKER");
 
             if let Ok(mut client) = self.client.try_write(){
                 if !client.send_queue.is_empty(){
@@ -260,45 +262,45 @@ impl Handler for ClientInterface{
                    //
                 //     match self.socket.try_write(output_buffer.as_slice()){
                 //        Ok(Some(n)) => {
-                //            println!("Wrote {} bytes", n);
+                //            info!("Wrote {} bytes", n);
                 //            client.send_queue.clear();
                 //        },
                 //        Ok(None) => {
-                //            println!("Nothing happened but it's okay I guess?");
+                //            info!("Nothing happened but it's okay I guess?");
                 //            //client.send_queue.push_back(message_frame);
                 //        },
                 //        Err(e) => {
-                //            println!("Oh fuck me god fucking damn it fucking shit fuck: {:?}", e);
+                //            info!("Oh fuck me god fucking damn it fucking shit fuck: {:?}", e);
                 //            //client.send_queue.push_back(message_frame);
                 //        }
                 //    };
                     if let Some(message_frame) = client.send_queue.pop_front(){
                         match self.socket.try_write(message_frame.to_bytes().as_slice()){
                             Ok(Some(n)) => {
-                                println!("Wrote {} bytes", n);
+                                info!("Wrote {} bytes", n);
                             },
                             Ok(None) => {
-                                println!("Nothing happened but it's okay I guess?");
+                                info!("Nothing happened but it's okay I guess?");
                                 client.send_queue.push_back(message_frame);
                             },
                             Err(e) => {
-                                println!("Oh fuck me god fucking damn it fucking shit fuck: {:?}", e);
+                                info!("Oh fuck me god fucking damn it fucking shit fuck: {:?}", e);
                                 client.send_queue.push_back(message_frame);
                             }
                         };
                     }
                     else{
-                        println!("Failed to pop message from queue!");
+                        info!("Failed to pop message from queue!");
                     }
                 }
             }
             else{
-                println!("Nothing to write...");
+                info!("Nothing to write...");
             }
         }
 
         if events.is_readable(){
-            println!("OH shit, what've you got to say?");
+            info!("OH shit, what've you got to say?");
 
             let received_message = self.read();
 
@@ -307,7 +309,7 @@ impl Handler for ClientInterface{
                 Ok(message) => {
                     if let Ok(mut data) = self.client.write(){
                         if let Message::ClientUpdate(client_state) = message{
-                            println!("Received client ID: {}", client_state.id);
+                            info!("Received client ID: {}", client_state.id);
                             data.client_state.id = client_state.id;
                             data.id = client_state.id;
                         }
@@ -317,10 +319,10 @@ impl Handler for ClientInterface{
                     }
                 },
                 Err(e) => {
-                    println!("Error trying to read! {:?}", e);
+                    info!("Error trying to read! {:?}", e);
                     if let Some(error_number) = e.raw_os_error(){
                         if error_number == 10057{
-                            println!("Socket is not connected!");
+                            info!("Socket is not connected!");
                             self.set_socket_disconnected();
                         }
                     }
@@ -334,14 +336,14 @@ impl Handler for ClientInterface{
     }
 
     fn notify(&mut self, _: &mut EventLoop<Self>, _: Self::Message) {
-        println!("Received notify!");
+        info!("Received notify!");
     }
 
     fn timeout(&mut self, _: &mut EventLoop<Self>, _: Self::Timeout) {
-        println!("Received timeout");
+        info!("Received timeout");
     }
     fn interrupted(&mut self, _: &mut EventLoop<Self>) {
-        println!("Interrupted! :O");
+        info!("Interrupted! :O");
     }
 }
 
@@ -375,7 +377,7 @@ impl Client{
                 return Ok(client);
             },
             Err(e) => {
-                println!("Failed to connect! {:?}", e);
+                info!("Failed to connect! {:?}", e);
                 return Err(e);
             }
         }
@@ -457,15 +459,15 @@ impl Client{
         // if let Ok(mut data) = self.data.try_write(){
         //     data.set_writable();
         // }
-        // else{ println!("Failed to write to client data"); }
+        // else{ info!("Failed to write to client data"); }
         //
         // if let Ok(mut event_loop) = self.event_loop.try_write(){
         //     if let Ok(mut interface) = self.interface.try_write(){
         //         interface.reregister(&mut event_loop);
         //     }
-        //     else{ println!("Failed to write to client interface"); }
+        //     else{ info!("Failed to write to client interface"); }
         // }
-        // else{ println!("Failed to write to event loop"); }
+        // else{ info!("Failed to write to event loop"); }
     }
 
     /// Update the @position of the client

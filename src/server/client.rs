@@ -1,3 +1,5 @@
+extern crate log;
+
 use authoritative::AuthoritativeServer;
 use std::io::Result;
 //use std::io;
@@ -37,7 +39,7 @@ impl GameClient{
     }
 
     pub fn register(&mut self, event_loop: &mut EventLoop<AuthoritativeServer>) -> Result<()>{
-        println!("Registering token {:?}", self.token);
+        info!("Registering token {:?}", self.token);
 
         event_loop.register(
             &self.socket,
@@ -47,13 +49,13 @@ impl GameClient{
         ).and_then(|(),|{
             Ok(())
         }).or_else(|e|{
-            println!("Failed to register {:?}, {:?}", self.token, e);
+            info!("Failed to register {:?}, {:?}", self.token, e);
             Err(e)
         })
     }
 
     pub fn reregister(&mut self, event_loop: &mut EventLoop<AuthoritativeServer>, as_writable: bool) -> Result<()>{
-        //println!("Reregistering token {:?}", self.token);
+        //info!("Reregistering token {:?}", self.token);
 
         let mut event_set = EventSet::readable();
         if as_writable{
@@ -68,7 +70,7 @@ impl GameClient{
         ).and_then(|(),|{
             Ok(())
         }).or_else(|e|{
-            println!("Failed to reregister {:?}, {:?}", self.token, e);
+            info!("Failed to reregister {:?}, {:?}", self.token, e);
             Err(e)
         })
     }
@@ -76,9 +78,9 @@ impl GameClient{
     pub fn write(&mut self) -> Result<()>{
         let write_socket = <TcpStream as Write>::by_ref(&mut self.socket);
 
-        println!("Sending message to {:?}", self.token);
+        info!("Sending message to {:?}", self.token);
         if let Some(output_message) = self.send_queue.pop_front(){
-            println!("Sending {:?} to client!", output_message);
+            info!("Sending {:?} to client!", output_message);
             let output_bytes = output_message.to_frame().to_bytes();
             write_socket.write(&output_bytes).ok();
         }
@@ -99,19 +101,19 @@ impl GameClient{
         //     Ok(message) => {
         //         match message{
         //             Message::Text{message: ref message_text} => {
-        //                 println!("Received message: {}", &message_text);
+        //                 info!("Received message: {}", &message_text);
         //             },
         //             Message::Ping => {
-        //                 println!("Received Ping!");
+        //                 info!("Received Ping!");
         //             },
         //             Message::ClientUpdate{position: _, rotation: _} => {
-        //                 println!("Received ")
+        //                 info!("Received ")
         //             }
         //         }
         //         return Ok(message);
         //     },
         //     Err(e) => {
-        //         println!("SHITS FUCKED UP! {:?}", e);
+        //         info!("SHITS FUCKED UP! {:?}", e);
         //         return Err(e);
         //     }
         // }

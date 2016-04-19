@@ -1,3 +1,4 @@
+extern crate log;
 extern crate mio;
 extern crate core;
 use std::cmp::PartialEq;

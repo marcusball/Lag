@@ -1,4 +1,5 @@
 extern crate mio;
+extern crate log;
 
 use client::GameClient;
 
@@ -74,7 +75,7 @@ impl AuthoritativeServer{
         let server_state = AuthoritativeServerState::new();
         let server_state_clone = server_state.clone();
 
-        println!("Starting authoritative server");
+        info!("Starting authoritative server");
         let server_socket = TcpListener::bind(&address).expect("Failed to start socket listener!");
 
         let mut server = AuthoritativeServer{
@@ -90,7 +91,7 @@ impl AuthoritativeServer{
                             EventSet::readable(),
                             PollOpt::edge()).expect("Failed to register server with event loop!");
 
-        println!("Running event loop...");
+        info!("Running event loop...");
 
         loop{
             let timeout = event_loop.timeout_ms(123, 300).unwrap();
@@ -103,7 +104,7 @@ impl AuthoritativeServer{
     }
 
     fn start_accept_loop(&mut self, event_loop: &mut EventLoop<AuthoritativeServer>){
-        println!("Beginning server accept loop");
+        info!("Beginning server accept loop");
 
         loop{
             let socket = match self.socket.accept(){
@@ -111,13 +112,13 @@ impl AuthoritativeServer{
                     match s{
                         Some((socket,_)) => socket,
                         None => {
-                            println!("Accept loop encountered WouldBlock");
+                            info!("Accept loop encountered WouldBlock");
                             return;
                         }
                     }
                 },
                 Err(e) => {
-                    println!("Failed to accept new socket. Error: {:?}", e);
+                    info!("Failed to accept new socket. Error: {:?}", e);
                     return;
                 }
             };
@@ -127,24 +128,24 @@ impl AuthoritativeServer{
 
             if let Ok(ref mut clients) = self.state.clients.write(){
                 match &clients.insert_with(|token| {
-                    println!("Inserting new connection from {:?}", token);
+                    info!("Inserting new connection from {:?}", token);
                     GameClient::new(socket, token)
                 }) {
                     &Some(token) => {
-                        println!("Insertion successful!");
+                        info!("Insertion successful!");
                         let ref mut client: GameClient = clients[token];
                         match client.register(event_loop){
                             Ok(_) => {
                                 registered_token = Some(token);
                             },
                             Err(e) => {
-                                println!("Failed to register connection {:?} with event loop, error: {:?}", token, e);
+                                info!("Failed to register connection {:?} with event loop, error: {:?}", token, e);
                                 //clients.remove(token);
                             }
                         }
                     },
                     &None => {
-                        println!("Failed to insert!");
+                        info!("Failed to insert!");
                     }
                 }
             };
@@ -185,7 +186,7 @@ impl AuthoritativeServer{
 
     /// Called when a new client connects and has been registered with the event loop
     fn on_new_client_registered(&mut self, token: Token){
-        println!("Registration successful!");
+        info!("Registration successful!");
         self.construct_state_for_new_client(token);
     }
 
@@ -228,7 +229,7 @@ impl AuthoritativeServer{
                 broadcast_queue.push(message);
             }
             else{
-                println!("Error: Failed to get mutable destination vec!");
+                info!("Error: Failed to get mutable destination vec!");
             }
         }
         else{
@@ -242,7 +243,7 @@ impl Handler for AuthoritativeServer{
     type Message = ();
 
     fn tick(&mut self, event_loop: &mut EventLoop<AuthoritativeServer>) {
-        //println!("Begin server tick!");
+        //info!("Begin server tick!");
 
         if self.state.game_state_updated{
             let game_state_message = Message::GameStateUpdate(self.state.game_state.clients.values().map(|client| *client).collect::<Vec<ClientState>>());
@@ -255,7 +256,7 @@ impl Handler for AuthoritativeServer{
                 // Add any messages to the client which are destined specifically to this client.
                 if let Some(mailbox) = self.state.message_queue.get_mut(&Destination::Client(client.token.clone())){
                     while let Some(message) = mailbox.pop(){
-                        println!("Added message {:?}", message);
+                        info!("Added message {:?}", message);
                         client.send_queue.push_back(message);
                     }
                 }
@@ -263,7 +264,7 @@ impl Handler for AuthoritativeServer{
                 // Add any 'Broadcast' messages that exist to the client's send queue.
                 if let Some(mailbox) = self.state.message_queue.get(&Destination::Broadcast){
                     for broadcast_message in mailbox{
-                        println!("Added message {:?}", broadcast_message);
+                        info!("Added message {:?}", broadcast_message);
                         client.send_queue.push_back(broadcast_message.clone());
                     }
                 }
@@ -282,23 +283,23 @@ impl Handler for AuthoritativeServer{
             broadcast_queue.clear();
         }
 
-        //println!("End server tick!");
+        //info!("End server tick!");
     }
 
     fn ready(&mut self, event_loop: &mut EventLoop<AuthoritativeServer>, token: Token, events: EventSet) {
         assert!(token != Token(0), "We're not supposed to get a Token(0)!");
 
-        println!("Ready for {:?}", token);
+        info!("Ready for {:?}", token);
 
         if events.is_error(){
-            println!("Error event for token {:?}", token);
+            info!("Error event for token {:?}", token);
             //Reset token?
             return;
         }
 
         if events.is_hup(){
-            println!("OH FUCK NO, {:?} DID NOT JUST FUCKING HANG UP ON ME!", token);
-            println!("I'M GOING TO FUCKING MURDER YOU FUCKER");
+            info!("OH FUCK NO, {:?} DID NOT JUST FUCKING HANG UP ON ME!", token);
+            info!("I'M GOING TO FUCKING MURDER YOU FUCKER");
 
             if let Ok(mut clients) = self.state.clients.write(){
                 &clients.remove(token);
@@ -308,7 +309,7 @@ impl Handler for AuthoritativeServer{
         }
 
         if events.is_readable(){
-            println!("GOT SHIT TO READ FROM MY BRAH {:?} HELLLL YEAH", token);
+            info!("GOT SHIT TO READ FROM MY BRAH {:?} HELLLL YEAH", token);
 
             if self.token == token{
                 self.start_accept_loop(event_loop);
@@ -321,7 +322,7 @@ impl Handler for AuthoritativeServer{
                     if let Some(Ok(message)) = message{
                         match message{
                             Message::Text{ message: _} => {
-                                println!("--> Received text message");
+                                info!("--> Received text message");
                                 let mut message_queue = &mut self.state.message_queue;
                                 if message_queue.contains_key(&Destination::Broadcast){
                                     let broadcast_queue = message_queue.get_mut(&Destination::Broadcast);
@@ -329,7 +330,7 @@ impl Handler for AuthoritativeServer{
                                         broadcast_queue.push(message);
                                     }
                                     else{
-                                        println!("Error: Failed to get mutable destination vec!");
+                                        info!("Error: Failed to get mutable destination vec!");
                                     }
                                 }
                                 else{
@@ -342,28 +343,28 @@ impl Handler for AuthoritativeServer{
                             },
 
                             Message::ClientUpdate(client_state) => {
-                                println!("Received client update: {:?}", client_state);
+                                info!("Received client update: {:?}", client_state);
                                 if client_state.id as usize != token.as_usize(){
-                                    println!("Error: Imposter trying to send client update! Claimed ID: {}, Token ID: {}", client_state.id, token.as_usize());
+                                    info!("Error: Imposter trying to send client update! Claimed ID: {}, Token ID: {}", client_state.id, token.as_usize());
                                 }
                                 else{
-                                    println!("Received client update packet! {:?}", client_state);
+                                    info!("Received client update packet! {:?}", client_state);
                                     self.update_client_in_game_state(&client_state);
                                 }
                             },
                             Message::GameStateUpdate(_) => {
-                                println!("Error: Received game state update from a client! ");
+                                info!("Error: Received game state update from a client! ");
                             }
                         };
                     }
                     else{
-                        println!("Error reading from client!");
+                        info!("Error reading from client!");
                     }
             }
         }
 
         if events.is_writable(){
-            println!("Oh shit, motherfucking {:?} is writable! Look at this guy!", token);
+            info!("Oh shit, motherfucking {:?} is writable! Look at this guy!", token);
 
             //fucking write some shit
             self.get_client_mut(token, |client|{

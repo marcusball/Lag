@@ -1,4 +1,6 @@
 extern crate byteorder;
+extern crate log;
+
 use std::io::{Read, ErrorKind, Result, Error};
 use byteorder::{ByteOrder, BigEndian};
 use std::collections::VecDeque;
@@ -52,7 +54,7 @@ impl MessageHeader{
     }
 
     pub fn read<R: Read>(input: &mut R) -> Result<MessageHeader>{
-        println!("begin messageheader::read");
+        info!("begin messageheader::read");
         let mut header_buf = [0u8; 9];
         let header_buf_length = match input.read(&mut header_buf){
             Ok(n) => { n },
@@ -123,7 +125,7 @@ impl Message{
 
     /// Read bytes from the input parameter, and return a parsed Message.
     pub fn read<R: Read>(mut input: &mut R) -> Result<Message>{
-        println!("Begin message::read");
+        info!("Begin message::read");
         let header = MessageHeader::read(&mut input);
         if header.is_err(){
             return Err(header.err().unwrap());
@@ -143,11 +145,11 @@ impl Message{
                 Ok(Message::Ping)
             },
             MessageCode::ClientUpdate => {
-                println!("Reading client update data!");
+                info!("Reading client update data!");
                 Self::read_client_update_message(&mut input, &header)
             },
             MessageCode::GameStateUpdate => {
-                println!("Received game state update");
+                info!("Received game state update");
                 Self::read_game_state_update_message(&mut input, &header)
             }
             //_ => { return Err(Error::new(ErrorKind::InvalidInput, format!("Received an unhandled message type, {:?}!", header.code))); }
@@ -200,7 +202,7 @@ impl Message{
         }
 
         if clients.len() as u32 != expected_quantity{
-            println!("Error! Received {} clients, expected {}!", clients.len(), expected_quantity);
+            info!("Error! Received {} clients, expected {}!", clients.len(), expected_quantity);
         }
 
         return Ok(Message::GameStateUpdate(clients));
