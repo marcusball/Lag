@@ -178,7 +178,7 @@ impl Message{
         Ok(Message::Text{message: message})
     }
 
-    fn read_client_update_message<R: Read>(input: &mut R, header: &MessageHeader) -> Result<Message>{
+    fn read_client_update_message<R: Read>(input: &mut R, _: &MessageHeader) -> Result<Message>{
         let client_state = try!(ClientState::read(input));
 
         return Ok(Message::ClientUpdate(client_state));
@@ -199,8 +199,7 @@ impl Message{
                 return client_state.to_bytes();
             },
             &Message::GameStateUpdate( _ ) => {
-                panic!();
-                return vec![];
+                panic!("UNIMPLEMENTED");
             }
         }
     }
@@ -212,18 +211,6 @@ impl Message{
             &Message::ClientUpdate(_) => { return MessageCode::ClientUpdate; },
             &Message::GameStateUpdate(_) => { return MessageCode::GameStateUpdate; }
         }
-    }
-
-    pub fn vec_to_bytes<M: ToFrame>(messages: &Vec<M>) -> Vec<u8>{
-        return messages.iter()
-                        .map(|mes| mes.to_frame().to_bytes() ).
-                        fold(Vec::new(), |mut buf, mut mes|{ buf.append(&mut mes); buf });
-    }
-
-    pub fn vecdeque_to_bytes<M: ToFrame>(messages: &VecDeque<M>) -> Vec<u8>{
-        return messages.iter()
-                        .map(|mes| mes.to_frame().to_bytes() ).
-                        fold(Vec::new(), |mut buf, mut mes|{ buf.append(&mut mes); buf });
     }
 }
 
@@ -265,7 +252,7 @@ impl MessageFrame{
 #[cfg(test)]
 mod test{
     use super::*;
-    use state::ClientState;
+    use state::{ClientState, Position, Rotation};
     use byteorder::{ByteOrder, BigEndian};
 
     #[test]
@@ -323,8 +310,10 @@ mod test{
         match deserialized_message{
             Message::ClientUpdate(client_state) => {
                 assert_eq!(client_state.id, test_client.id);
-                assert_eq!(client_state.position, test_client.position);
-                assert_eq!(client_state.rotation, test_client.rotation);
+                assert_eq!(client_state.position.0, test_client.position.0);
+                assert_eq!(client_state.position.1, test_client.position.1);
+                assert_eq!(client_state.position.2, test_client.position.2);
+                assert_eq!(client_state.rotation.0, test_client.rotation.0);
             },
             _ => { panic!(); }
         }

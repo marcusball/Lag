@@ -91,7 +91,13 @@ impl AuthoritativeServer{
                             PollOpt::edge()).expect("Failed to register server with event loop!");
 
         println!("Running event loop...");
-        event_loop.run(&mut server).expect("Failed to run event loop!");
+
+        loop{
+            let timeout = event_loop.timeout_ms(123, 5000).unwrap();
+            event_loop.run_once(&mut server, None);
+            let _ = event_loop.clear_timeout(timeout);
+        }
+
 
         return server;
     }
@@ -216,11 +222,11 @@ impl AuthoritativeServer{
 }
 
 impl Handler for AuthoritativeServer{
-    type Timeout = ();
+    type Timeout = u32;
     type Message = ();
 
     fn tick(&mut self, event_loop: &mut EventLoop<AuthoritativeServer>) {
-        println!("Begin server tick!");
+        //println!("Begin server tick!");
 
         if let Ok(mut clients) = self.state.clients.write(){
             for client in clients.iter_mut(){
@@ -254,7 +260,7 @@ impl Handler for AuthoritativeServer{
             broadcast_queue.clear();
         }
 
-        println!("End server tick!");
+        //println!("End server tick!");
     }
 
     fn ready(&mut self, event_loop: &mut EventLoop<AuthoritativeServer>, token: Token, events: EventSet) {
@@ -279,15 +285,6 @@ impl Handler for AuthoritativeServer{
             return;
         }
 
-        if events.is_writable(){
-            println!("Oh shit, motherfucking {:?} is writable! Look at this guy!", token);
-
-            //fucking write some shit
-            self.get_client_mut(token, |client|{
-                client.write()
-            }).ok();
-        }
-
         if events.is_readable(){
             println!("GOT SHIT TO READ FROM MY BRAH {:?} HELLLL YEAH", token);
 
@@ -295,7 +292,6 @@ impl Handler for AuthoritativeServer{
                 self.start_accept_loop(event_loop);
             }
             else{
-                loop{
                     let message = self.get_client_mut(token, |client|{
                         return client.read();
                     }).ok();
@@ -303,6 +299,7 @@ impl Handler for AuthoritativeServer{
                     if let Some(Ok(message)) = message{
                         match message{
                             Message::Text{ message: _} => {
+                                println!("--> Received text message");
                                 let mut message_queue = &mut self.state.message_queue;
                                 if message_queue.contains_key(&Destination::Broadcast){
                                     let broadcast_queue = message_queue.get_mut(&Destination::Broadcast);
@@ -338,11 +335,18 @@ impl Handler for AuthoritativeServer{
                         };
                     }
                     else{
-                        //println!("Error reading from client!");
-                        break;
+                        println!("Error reading from client!");
                     }
-                }
             }
+        }
+
+        if events.is_writable(){
+            println!("Oh shit, motherfucking {:?} is writable! Look at this guy!", token);
+
+            //fucking write some shit
+            self.get_client_mut(token, |client|{
+                client.write()
+            }).ok();
         }
     }
 }

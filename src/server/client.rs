@@ -53,7 +53,7 @@ impl GameClient{
     }
 
     pub fn reregister(&mut self, event_loop: &mut EventLoop<AuthoritativeServer>, as_writable: bool) -> Result<()>{
-        println!("Reregistering token {:?}", self.token);
+        //println!("Reregistering token {:?}", self.token);
 
         let mut event_set = EventSet::readable();
         if as_writable{

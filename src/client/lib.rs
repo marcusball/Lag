@@ -32,6 +32,8 @@ const RECEIVED_MESSAGES_PER_TICK: usize = 2;
 
 /// Contains data related to the client
 pub struct ClientData{
+    pub id: u32,
+
     pub token: Token,
 
     interest: EventSet,
@@ -41,17 +43,21 @@ pub struct ClientData{
     // Buffer of received messages
     receive_queue: Vec<Message>,
 
-    client_state: ClientState
+    client_state: ClientState,
+
+    state_updated: bool
 }
 
 impl ClientData{
     fn new() -> ClientData{
         ClientData {
+            id: 0,
             send_queue: VecDeque::new(),
             token: CLIENT_TOKEN,
             interest: EventSet::readable(),
             receive_queue: Vec::with_capacity(RECEIVED_MESSAGES_PER_TICK),
-            client_state: ClientState::new(CLIENT_TOKEN.as_usize() as u32)
+            client_state: ClientState::new(CLIENT_TOKEN.as_usize() as u32),
+            state_updated: false
         }
     }
 
@@ -93,9 +99,12 @@ impl ClientInterface{
         let thread_interface = interface.clone();
         let handle = thread::spawn(move||{
             loop{
-                if let Ok(mut event_loop) = event_loop.try_write(){
-                    if let Ok(mut client_interface) = thread_interface.try_write(){
+
+                if let Ok(mut client_interface) = thread_interface.write(){
+                    if let Ok(mut event_loop) = event_loop.write(){
+                        let timeout = event_loop.timeout_ms(123, 300).unwrap();
                         event_loop.run_once(&mut client_interface, None);
+                        let _ = event_loop.clear_timeout(timeout);
                     }
                 }
 
@@ -159,8 +168,7 @@ impl ClientInterface{
                         println!("Received Ping!");
                     },
                     Message::ClientUpdate(_) =>{
-                        println!("PANIC! CLIENT SHOULDN'T RECEIVE A CLIENT UPDATE PACKET!");
-                        return Err(Error::new(ErrorKind::Other, String::from("Client received invalid packet type!")));
+                        println!("Received client update packet!");
                     },
                     Message::GameStateUpdate( _ ) => {
                         println!("Received game state update!");
@@ -199,11 +207,21 @@ impl ClientInterface{
 }
 
 impl Handler for ClientInterface{
-    type Timeout = ();
+    type Timeout = u32;
     type Message = ();
 
     fn tick(&mut self, event_loop: &mut EventLoop<ClientInterface>) {
-        println!("Begin client tick");
+        //println!("Begin client tick");
+
+        if let Ok(mut data) = self.client.try_write(){
+            if data.state_updated{
+                // @TODO: Check if there's already a ClientState message in the output queue
+                let client_state = data.client_state;
+                data.send_queue.push_back(Message::new_client_update_message(&client_state).to_frame());
+                data.state_updated = false;
+            }
+        }
+
 
         match self.has_messages_to_send(){
             true  => { self.set_writable(); },
@@ -211,11 +229,10 @@ impl Handler for ClientInterface{
         }
 
         if self.is_connected{
-            println!("Reregistering the things");
             self.reregister(event_loop);
         }
 
-        println!("End client tick");
+        //println!("End client tick");
     }
 
     fn ready(&mut self, event_loop: &mut EventLoop<ClientInterface>, token: Token, events: EventSet) {
@@ -231,76 +248,48 @@ impl Handler for ClientInterface{
             return;
         }
 
-        if events.is_readable(){
-            println!("OH shit, what've you got to say?");
-
-            loop{
-                let received_message = self.read();
-
-
-                match received_message{
-                    Ok(message) => {
-                        if let Ok(mut data) = self.client.write(){
-                            data.receive_queue.push(message);
-                        }
-                    },
-                    Err(e) => {
-                        println!("Error trying to read! {:?}", e);
-                        if let Some(error_number) = e.raw_os_error(){
-                            if error_number == 10057{
-                                println!("Socket is not connected!");
-                                self.set_socket_disconnected();
-                            }
-                        }
-                        break;
-                    }
-                }
-            }
-        }
-
-
         if events.is_writable(){
             println!("TIME TO TALK MOTHERFUCKER");
 
             if let Ok(mut client) = self.client.try_write(){
                 if !client.send_queue.is_empty(){
-                    let output_buffer = client.send_queue.iter()
-                                    .map(|mes| mes.to_bytes() ).
-                                    fold(Vec::new(), |mut buf, mut mes|{ buf.append(&mut mes); buf });
-
-
-                    match self.socket.try_write(output_buffer.as_slice()){
-                       Ok(Some(n)) => {
-                           println!("Wrote {} bytes", n);
-                           client.send_queue.clear();
-                       },
-                       Ok(None) => {
-                           println!("Nothing happened but it's okay I guess?");
-                           //client.send_queue.push_back(message_frame);
-                       },
-                       Err(e) => {
-                           println!("Oh fuck me god fucking damn it fucking shit fuck: {:?}", e);
-                           //client.send_queue.push_back(message_frame);
-                       }
-                   };
-                    // if let Some(message_frame) = client.send_queue.pop_front(){
-                    //     match self.socket.try_write(message_frame.to_bytes().as_slice()){
-                    //         Ok(Some(n)) => {
-                    //             println!("Wrote {} bytes", n);
-                    //         },
-                    //         Ok(None) => {
-                    //             println!("Nothing happened but it's okay I guess?");
-                    //             client.send_queue.push_back(message_frame);
-                    //         },
-                    //         Err(e) => {
-                    //             println!("Oh fuck me god fucking damn it fucking shit fuck: {:?}", e);
-                    //             client.send_queue.push_back(message_frame);
-                    //         }
-                    //     };
-                    // }
-                    // else{
-                    //     println!("Failed to pop message from queue!");
-                    // }
+                //     let output_buffer = client.send_queue.iter()
+                //                     .map(|mes| mes.to_bytes() ).
+                //                     fold(Vec::new(), |mut buf, mut mes|{ buf.append(&mut mes); buf });
+                   //
+                   //
+                //     match self.socket.try_write(output_buffer.as_slice()){
+                //        Ok(Some(n)) => {
+                //            println!("Wrote {} bytes", n);
+                //            client.send_queue.clear();
+                //        },
+                //        Ok(None) => {
+                //            println!("Nothing happened but it's okay I guess?");
+                //            //client.send_queue.push_back(message_frame);
+                //        },
+                //        Err(e) => {
+                //            println!("Oh fuck me god fucking damn it fucking shit fuck: {:?}", e);
+                //            //client.send_queue.push_back(message_frame);
+                //        }
+                //    };
+                    if let Some(message_frame) = client.send_queue.pop_front(){
+                        match self.socket.try_write(message_frame.to_bytes().as_slice()){
+                            Ok(Some(n)) => {
+                                println!("Wrote {} bytes", n);
+                            },
+                            Ok(None) => {
+                                println!("Nothing happened but it's okay I guess?");
+                                client.send_queue.push_back(message_frame);
+                            },
+                            Err(e) => {
+                                println!("Oh fuck me god fucking damn it fucking shit fuck: {:?}", e);
+                                client.send_queue.push_back(message_frame);
+                            }
+                        };
+                    }
+                    else{
+                        println!("Failed to pop message from queue!");
+                    }
                 }
             }
             else{
@@ -308,6 +297,36 @@ impl Handler for ClientInterface{
             }
         }
 
+        if events.is_readable(){
+            println!("OH shit, what've you got to say?");
+
+            let received_message = self.read();
+
+
+            match received_message{
+                Ok(message) => {
+                    if let Ok(mut data) = self.client.write(){
+                        if let Message::ClientUpdate(client_state) = message{
+                            println!("Received client ID: {}", client_state.id);
+                            data.client_state.id = client_state.id;
+                            data.id = client_state.id;
+                        }
+                        else{
+                            data.receive_queue.push(message);
+                        }
+                    }
+                },
+                Err(e) => {
+                    println!("Error trying to read! {:?}", e);
+                    if let Some(error_number) = e.raw_os_error(){
+                        if error_number == 10057{
+                            println!("Socket is not connected!");
+                            self.set_socket_disconnected();
+                        }
+                    }
+                }
+            }
+        }
 
         //let client_rereg = self.client.clone();
         //self.reregister(event_loop, &client_rereg);
@@ -432,12 +451,21 @@ impl Client{
         if let Ok(mut data) = self.data.try_write(){
             data.client_state.position = transform.position;
             data.client_state.rotation = transform.rotation;
+            data.state_updated = true;
         }
 
-        if let Ok(client_state) = self.get_client_state(){
-            // @TODO: Check if there's already a ClientState message in the output queue
-            self.send_message(&Message::new_client_update_message(&client_state));
-        }
+        // if let Ok(mut data) = self.data.try_write(){
+        //     data.set_writable();
+        // }
+        // else{ println!("Failed to write to client data"); }
+        //
+        // if let Ok(mut event_loop) = self.event_loop.try_write(){
+        //     if let Ok(mut interface) = self.interface.try_write(){
+        //         interface.reregister(&mut event_loop);
+        //     }
+        //     else{ println!("Failed to write to client interface"); }
+        // }
+        // else{ println!("Failed to write to event loop"); }
     }
 
     /// Update the @position of the client
@@ -488,7 +516,9 @@ mod test {
             let message = Message::new_text_message(String::from("Hello, world!"));
             client.send_message(&message);
 
-            thread::sleep(Duration::new(1,0));
+            for _ in 1..5{
+                thread::sleep(Duration::new(2,0));
+            }
         }
     }
 }
