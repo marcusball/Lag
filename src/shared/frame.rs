@@ -1,6 +1,7 @@
 extern crate byteorder;
 use std::io::{Read, ErrorKind, Result, Error};
 use byteorder::{ByteOrder, BigEndian};
+use std::collections::VecDeque;
 
 #[path="../shared/state.rs"]
 mod state;
@@ -211,6 +212,18 @@ impl Message{
             &Message::ClientUpdate(_) => { return MessageCode::ClientUpdate; },
             &Message::GameStateUpdate(_) => { return MessageCode::GameStateUpdate; }
         }
+    }
+
+    pub fn vec_to_bytes<M: ToFrame>(messages: &Vec<M>) -> Vec<u8>{
+        return messages.iter()
+                        .map(|mes| mes.to_frame().to_bytes() ).
+                        fold(Vec::new(), |mut buf, mut mes|{ buf.append(&mut mes); buf });
+    }
+
+    pub fn vecdeque_to_bytes<M: ToFrame>(messages: &VecDeque<M>) -> Vec<u8>{
+        return messages.iter()
+                        .map(|mes| mes.to_frame().to_bytes() ).
+                        fold(Vec::new(), |mut buf, mut mes|{ buf.append(&mut mes); buf });
     }
 }
 

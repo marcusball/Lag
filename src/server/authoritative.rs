@@ -52,7 +52,8 @@ impl AuthoritativeServerState{
             // Max 128 connections
             clients: Arc::new(RwLock::new(Slab::new_starting_at(Token(2), 128))),
             message_queue: HashMap::new(),
-            game_state: GameState::new()
+            game_state: GameState::new(),
+            game_state_updated: false
         }
     }
 }
@@ -115,6 +116,9 @@ impl AuthoritativeServer{
                 }
             };
 
+            // If a client is successfully registered, this will be set to that client's token.
+            let mut registered_token : Option<Token> = None;
+
             if let Ok(ref mut clients) = self.state.clients.write(){
                 match &clients.insert_with(|token| {
                     println!("Inserting new connection from {:?}", token);
@@ -124,7 +128,9 @@ impl AuthoritativeServer{
                         println!("Insertion successful!");
                         let ref mut client: GameClient = clients[token];
                         match client.register(event_loop){
-                            Ok(_) => { println!("Registration successful!"); },
+                            Ok(_) => {
+                                registered_token = Some(token);
+                            },
                             Err(e) => {
                                 println!("Failed to register connection {:?} with event loop, error: {:?}", token, e);
                                 //clients.remove(token);
@@ -136,6 +142,10 @@ impl AuthoritativeServer{
                     }
                 }
             };
+
+            if let Some(token) = registered_token{
+                self.on_new_client_registered(token);
+            }
         }
     }
 
@@ -167,10 +177,41 @@ impl AuthoritativeServer{
         Err(String::from(format!("No client exists with token {:?}", token)))
     }
 
+    /// Called when a new client connects and has been registered with the event loop
+    fn on_new_client_registered(&mut self, token: Token){
+        println!("Registration successful!");
+        self.construct_state_for_new_client(token);
+    }
+
     /// Return TRUE if there are messages bound toward a client given by @token
     fn has_messages_for_client(&self, client: &GameClient) -> bool{
         // If there are any messages in messages bound for all clients, then we're good.
         !client.send_queue.is_empty()
+    }
+
+    /// Update the Game State with the given Client State
+    fn update_client_in_game_state(&mut self, client_state: &ClientState){
+        self.state.game_state.clients.insert(client_state.id, *client_state);
+        self.state.game_state_updated = true;
+    }
+
+    fn construct_state_for_new_client(&mut self, token: Token){
+        let state = ClientState::new(token.as_usize() as u32);
+        self.update_client_in_game_state(&state);
+        self.send_message_to_client(token, Message::new_client_update_message(&state));
+    }
+
+    fn send_message_to_client(&mut self, token: Token, message: Message){
+        let destination = Destination::Client(token.clone());
+
+        if self.state.message_queue.contains_key(&destination){
+            if let Some(mailbox) = self.state.message_queue.get_mut(&destination){
+                mailbox.push(message);
+            }
+        }
+        else{
+            self.state.message_queue.insert(destination, vec![message]);
+        }
     }
 }
 
@@ -288,8 +329,7 @@ impl Handler for AuthoritativeServer{
                                 }
                                 else{
                                     println!("Received client update packet! {:?}", client_state);
-                                    self.state.game_state.clients.insert(client_state.id, client_state);
-                                    self.state.game_state_updated = true;
+                                    self.update_client_in_game_state(&client_state);
                                 }
                             },
                             Message::GameStateUpdate(_) => {

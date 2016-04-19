@@ -181,13 +181,13 @@ impl ClientInterface{
     }
 
     fn set_read_only(&mut self){
-        if let Ok(mut client) = self.client.write(){
+        if let Ok(mut client) = self.client.try_write(){
             client.set_read_only();
         }
     }
 
     fn has_messages_to_send(&self) -> bool{
-        if let Ok(client) = self.client.read(){
+        if let Ok(client) = self.client.try_read(){
             return client.has_messages_to_send();
         }
         return false;
@@ -231,60 +231,80 @@ impl Handler for ClientInterface{
             return;
         }
 
+        if events.is_readable(){
+            println!("OH shit, what've you got to say?");
+
+            loop{
+                let received_message = self.read();
+
+
+                match received_message{
+                    Ok(message) => {
+                        if let Ok(mut data) = self.client.write(){
+                            data.receive_queue.push(message);
+                        }
+                    },
+                    Err(e) => {
+                        println!("Error trying to read! {:?}", e);
+                        if let Some(error_number) = e.raw_os_error(){
+                            if error_number == 10057{
+                                println!("Socket is not connected!");
+                                self.set_socket_disconnected();
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+
+
         if events.is_writable(){
             println!("TIME TO TALK MOTHERFUCKER");
 
-            if let Ok(mut client) = self.client.write(){
+            if let Ok(mut client) = self.client.try_write(){
                 if !client.send_queue.is_empty(){
-                    if let Some(message_frame) = client.send_queue.pop_front(){
-                        match self.socket.try_write(message_frame.to_bytes().as_slice()){
-                            Ok(Some(n)) => {
-                                println!("Wrote {} bytes", n);
-                            },
-                            Ok(None) => {
-                                println!("Nothing happened but it's okay I guess?");
-                                client.send_queue.push_back(message_frame);
-                            },
-                            Err(e) => {
-                                println!("Oh fuck me god fucking damn it fucking shit fuck: {:?}", e);
-                                client.send_queue.push_back(message_frame);
-                            }
-                        };
-                    }
-                    else{
-                        println!("Failed to pop message from queue!");
-                    }
-                }
-                else{
-                    println!("WTF do you mean there's no messages for me?");
+                    let output_buffer = client.send_queue.iter()
+                                    .map(|mes| mes.to_bytes() ).
+                                    fold(Vec::new(), |mut buf, mut mes|{ buf.append(&mut mes); buf });
+
+
+                    match self.socket.try_write(output_buffer.as_slice()){
+                       Ok(Some(n)) => {
+                           println!("Wrote {} bytes", n);
+                           client.send_queue.clear();
+                       },
+                       Ok(None) => {
+                           println!("Nothing happened but it's okay I guess?");
+                           //client.send_queue.push_back(message_frame);
+                       },
+                       Err(e) => {
+                           println!("Oh fuck me god fucking damn it fucking shit fuck: {:?}", e);
+                           //client.send_queue.push_back(message_frame);
+                       }
+                   };
+                    // if let Some(message_frame) = client.send_queue.pop_front(){
+                    //     match self.socket.try_write(message_frame.to_bytes().as_slice()){
+                    //         Ok(Some(n)) => {
+                    //             println!("Wrote {} bytes", n);
+                    //         },
+                    //         Ok(None) => {
+                    //             println!("Nothing happened but it's okay I guess?");
+                    //             client.send_queue.push_back(message_frame);
+                    //         },
+                    //         Err(e) => {
+                    //             println!("Oh fuck me god fucking damn it fucking shit fuck: {:?}", e);
+                    //             client.send_queue.push_back(message_frame);
+                    //         }
+                    //     };
+                    // }
+                    // else{
+                    //     println!("Failed to pop message from queue!");
+                    // }
                 }
             }
             else{
                 println!("Nothing to write...");
-            }
-        }
-
-        if events.is_readable(){
-            println!("OH shit, what've you got to say?");
-
-            let received_message = self.read();
-
-
-            match received_message{
-                Ok(message) => {
-                    if let Ok(mut data) = self.client.write(){
-                        data.receive_queue.push(message);
-                    }
-                },
-                Err(e) => {
-                    println!("Error trying to read! {:?}", e);
-                    if let Some(error_number) = e.raw_os_error(){
-                        if error_number == 10057{
-                            println!("Socket is not connected!");
-                            self.set_socket_disconnected();
-                        }
-                    }
-                }
             }
         }
 
@@ -409,7 +429,7 @@ impl Client{
 
     /// Update the @position and @rotation of the client
     pub fn set_transform(&mut self, transform: Transform){
-        if let Ok(mut data) = self.data.write(){
+        if let Ok(mut data) = self.data.try_write(){
             data.client_state.position = transform.position;
             data.client_state.rotation = transform.rotation;
         }
