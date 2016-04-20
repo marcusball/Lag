@@ -127,7 +127,7 @@ impl ClientInterface{
                     }
                 }
 
-                //thread::sleep(Duration::new(0,100));
+                thread::sleep(Duration::new(0,100));
             }
         });
 
