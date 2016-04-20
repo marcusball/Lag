@@ -1,3 +1,4 @@
+#[macro_use]
 extern crate log;
 extern crate mio;
 extern crate byteorder;
@@ -33,7 +34,7 @@ const RECEIVED_MESSAGES_PER_TICK: usize = 2;
 
 /// Contains data related to the client
 pub struct ClientData{
-    pub id: u32,
+    pub id: Option<u32>,
 
     pub token: Token,
 
@@ -46,19 +47,23 @@ pub struct ClientData{
 
     client_state: ClientState,
 
-    state_updated: bool
+    state_updated: bool,
+
+    /// Set to true once the client has received initial ClientState from the server
+    is_authenticated_client: bool
 }
 
 impl ClientData{
     fn new() -> ClientData{
         ClientData {
-            id: 0,
+            id: None,
             send_queue: VecDeque::new(),
             token: CLIENT_TOKEN,
             interest: EventSet::readable(),
             receive_queue: Vec::with_capacity(RECEIVED_MESSAGES_PER_TICK),
             client_state: ClientState::new(CLIENT_TOKEN.as_usize() as u32),
-            state_updated: false
+            state_updated: false,
+            is_authenticated_client: false
         }
     }
 
@@ -109,14 +114,20 @@ impl ClientInterface{
                     }
                 }
 
-                if let Ok(client_interface) = thread_interface.try_read(){
+                if let Ok(client_interface) = thread_interface.try_write(){
                     if !client_interface.is_connected{
                         info!("The client has disconnected from the server!");
+
+                        if let Ok(mut event_loop) = event_loop.write(){
+                            event_loop.shutdown();
+                        }
+
+                        client_interface.socket.shutdown(Shutdown::Both);
                         break;
                     }
                 }
 
-                thread::sleep(Duration::new(0,100));
+                //thread::sleep(Duration::new(0,100));
             }
         });
 
@@ -310,7 +321,8 @@ impl Handler for ClientInterface{
                         if let Message::ClientUpdate(client_state) = message{
                             info!("Received client ID: {}", client_state.id);
                             data.client_state.id = client_state.id;
-                            data.id = client_state.id;
+                            data.id = Some(client_state.id);
+                            data.is_authenticated_client = true;
                         }
                         else{
                             data.receive_queue.push(message);
@@ -350,7 +362,11 @@ impl Handler for ClientInterface{
 pub struct Client{
     data: Arc<RwLock<ClientData>>,
     interface: Arc<RwLock<ClientInterface>>,
-    event_loop: Arc<RwLock<EventLoop<ClientInterface>>>
+    event_loop: Arc<RwLock<EventLoop<ClientInterface>>>,
+
+    /// Set to true once the client has received initial ClientState from the server
+    is_authenticated_client: bool,
+    id: Option<u32>
 }
 
 impl Client{
@@ -368,7 +384,9 @@ impl Client{
                 let mut client = Client{
                     data: client_data,
                     interface: client_interface,
-                    event_loop: event_loop
+                    event_loop: event_loop,
+                    is_authenticated_client: false,
+                    id: None
                 };
 
                 client.register();
@@ -472,31 +490,33 @@ impl Client{
     /// Update the @position of the client
     /// Maintains the current rotation
     pub fn set_position(&mut self, position: Position){
-        let current_rotation = self.get_rotation();
-        self.set_transform(Transform::from_components(position, current_rotation));
+        if let Some(current_rotation) = self.get_rotation(){
+            self.set_transform(Transform::from_components(position, current_rotation));
+        }
     }
 
     /// Update the @rotation of the client
     /// Maintains the current position
     pub fn set_rotation(&mut self, rotation: Rotation){
-        let current_position = self.get_position();
-        self.set_transform(Transform::from_components(current_position, rotation));
+        if let Some(current_position) = self.get_position(){
+            self.set_transform(Transform::from_components(current_position, rotation));
+        }
     }
 
     /// Get the client's current position
     pub fn get_position(&self) -> Option<Position> {
         if let Some(transform) = self.get_transform(){
-            Some(transform.position)
+            return Some(transform.position);
         }
-        None
+        return None;
     }
 
     /// Get the client's current rotaton
     pub fn get_rotation(&self) -> Option<Rotation> {
         if let Some(transform) = self.get_transform(){
-            Some(transform.rotation)
+            return Some(transform.rotation);
         }
-        None
+        return None;
     }
 
     /// Get the client's position and rotation
@@ -505,6 +525,39 @@ impl Client{
             return Some(Transform::from_components(data.client_state.position, data.client_state.rotation));
         }
         return None;
+    }
+
+    pub fn is_authenticated(&mut self) -> bool{
+        // If the cached value is `false` then either we're not authenticated,
+        // or we haven't checked the actual ClientData value yet
+        if !self.is_authenticated_client{
+            // Read the ClientData value
+            if let Ok(data) = self.data.try_read(){
+                // Cache the ClientData value to minimize RwLock access
+                self.is_authenticated_client = data.is_authenticated_client;
+            }
+        }
+        return self.is_authenticated_client;
+    }
+
+    pub fn disconnect(&mut self){
+        // Read the ClientData value
+        if let Ok(mut interface) = self.interface.write(){
+            interface.is_connected = false;
+        }
+    }
+
+    pub fn get_id(&mut self) -> Option<u32>{
+        // If the cached value is `false` then either we're not authenticated,
+        // or we haven't checked the actual ClientData value yet
+        if self.id.is_none(){
+            // Read the ClientData value
+            if let Ok(data) = self.data.try_read(){
+                // Cache the ClientData value to minimize RwLock access
+                self.id = data.id;
+            }
+        }
+        return self.id;
     }
 }
 

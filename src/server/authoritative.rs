@@ -303,6 +303,8 @@ impl Handler for AuthoritativeServer{
 
             if let Ok(mut clients) = self.state.clients.write(){
                 &clients.remove(token);
+                let _ = self.state.game_state.clients.remove(&(token.as_usize() as u32));
+                self.state.game_state_updated = true;
             }
             //Reset?
             return;

@@ -123,4 +123,11 @@ impl GameState{
             clients: HashMap::with_capacity(32)
         }
     }
+
+    pub fn update_from_vec(&mut self, update_vec: &Vec<ClientState>){
+        self.clients.clear();
+        for client in update_vec{
+            self.clients.insert(client.id, *client);
+        }
+    }
 }
