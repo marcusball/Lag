@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::io::{Read, ErrorKind, Result, Error};
 use byteorder::{ByteOrder, BigEndian};
 use std::mem;
+use std::ops::Add;
 
 #[derive(Copy, Debug, Clone)]
 pub struct Position(pub i32, pub i32, pub i32);
@@ -17,6 +18,14 @@ pub struct Transform{pub position: Position, pub rotation: Rotation}
 
 impl Position{
     pub fn zero() -> Position{ Position(0,0,0) }
+}
+
+impl Add for Position{
+    type Output = Position;
+
+    fn add(self, other: Position) -> Position {
+        Position(self.0 + other.0, self.1 + other.1, self.2 + other.2)
+    }
 }
 
 impl Rotation{

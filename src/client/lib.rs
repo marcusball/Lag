@@ -1,4 +1,3 @@
-#[macro_use]
 extern crate log;
 extern crate mio;
 extern crate byteorder;
@@ -47,10 +46,7 @@ pub struct ClientData{
 
     client_state: ClientState,
 
-    state_updated: bool,
-
-    /// Set to true once the client has received initial ClientState from the server
-    is_authenticated_client: bool
+    state_updated: bool
 }
 
 impl ClientData{
@@ -62,8 +58,7 @@ impl ClientData{
             interest: EventSet::readable(),
             receive_queue: Vec::with_capacity(RECEIVED_MESSAGES_PER_TICK),
             client_state: ClientState::new(CLIENT_TOKEN.as_usize() as u32),
-            state_updated: false,
-            is_authenticated_client: false
+            state_updated: false
         }
     }
 
@@ -316,7 +311,6 @@ impl Handler for ClientInterface{
                             info!("Received client ID: {}", client_state.id);
                             data.client_state.id = client_state.id;
                             data.id = client_state.id;
-                            data.is_authenticated_client = true;
                         }
                         else{
                             data.receive_queue.push(message);
@@ -356,10 +350,7 @@ impl Handler for ClientInterface{
 pub struct Client{
     data: Arc<RwLock<ClientData>>,
     interface: Arc<RwLock<ClientInterface>>,
-    event_loop: Arc<RwLock<EventLoop<ClientInterface>>>,
-
-    /// Set to true once the client has received initial ClientState from the server
-    is_authenticated_client: bool
+    event_loop: Arc<RwLock<EventLoop<ClientInterface>>>
 }
 
 impl Client{
@@ -377,8 +368,7 @@ impl Client{
                 let mut client = Client{
                     data: client_data,
                     interface: client_interface,
-                    event_loop: event_loop,
-                    is_authenticated_client: false
+                    event_loop: event_loop
                 };
 
                 client.register();
@@ -494,30 +484,27 @@ impl Client{
     }
 
     /// Get the client's current position
-    pub fn get_position(&self) -> Position{ self.get_transform().position }
-
-    /// Get the client's current rotaton
-    pub fn get_rotation(&self) -> Rotation{ self.get_transform().rotation }
-
-    /// Get the client's position and rotation
-    pub fn get_transform(&self) -> Transform{
-        if let Ok(data) = self.data.read(){
-            return Transform::from_components(data.client_state.position, data.client_state.rotation);
+    pub fn get_position(&self) -> Option<Position> {
+        if let Some(transform) = self.get_transform(){
+            Some(transform.position)
         }
-        panic!();
+        None
     }
 
-    pub fn is_authenticated(&mut self) -> bool{
-        // If the cached value is `false` then either we're not authenticated,
-        // or we haven't checked the actual ClientData value yet
-        if !self.is_authenticated_client{
-            // Read the ClientData value
-            if let Ok(data) = self.data.try_read(){
-                // Cache the ClientData value to minimize RwLock access
-                self.is_authenticated_client = data.is_authenticated_client;
-            }
+    /// Get the client's current rotaton
+    pub fn get_rotation(&self) -> Option<Rotation> {
+        if let Some(transform) = self.get_transform(){
+            Some(transform.rotation)
         }
-        return self.is_authenticated_client;
+        None
+    }
+
+    /// Get the client's position and rotation
+    pub fn get_transform(&self) -> Option<Transform>{
+        if let Ok(data) = self.data.read(){
+            return Some(Transform::from_components(data.client_state.position, data.client_state.rotation));
+        }
+        return None;
     }
 }
 
